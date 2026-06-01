@@ -21,10 +21,10 @@ export default function CommunicationTab({ threads, bookings, onAddMessage }: Co
 
   // Quick Preset prompts (translated to prompt tailored answers in French)
   const presets = [
-    { label: "🔑 Infos d'Arrivée", prompt: "Explain self check-in gate instructions in French, lockbox code is '4822', and express warm prestige French hospitality for Auberge Paul Sungani." },
+    { label: "🔑 Infos d'Arrivée", prompt: "Explain self check-in gate instructions in French, lockbox code is '4822', and express warm prestige French hospitality for SpaceOne." },
     { label: "🕚 Heure de Départ", prompt: "Politely verify in French if they need any assistance checking out tomorrow, ask for their target check-out time, and outline trash bin directions warmly." },
     { label: "🔇 Nuisance Sonore", prompt: "Politely request in French that they lower their audio/chatter because local building regulations require quiet quiet hours after 10:00 PM." },
-    { label: "⭐ Demande d'Avis", prompt: "Thank them kindly in French for their stay under Auberge Paul Sungani, express they were wonderful guests, and ask if they would consider leaving a 5-star review." }
+    { label: "⭐ Demande d'Avis", prompt: "Thank them kindly in French for their stay under SpaceOne, express they were wonderful guests, and ask if they would consider leaving a 5-star review." }
   ];
 
   const activeThread = threads.find((t) => t.id === selectedThreadId);

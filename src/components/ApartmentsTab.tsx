@@ -18,6 +18,7 @@ export default function ApartmentsTab({
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editingApt, setEditingApt] = useState<Apartment | null>(null);
   const [search, setSearch] = useState("");
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   // Form states
   const [name, setName] = useState("");
@@ -159,10 +160,10 @@ export default function ApartmentsTab({
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight text-slate-900 font-sans">
-            Hébergements de l'Auberge
+            Hébergements de SpaceOne
           </h2>
           <p className="text-sm text-slate-500 font-sans mt-1">
-            Gérez votre parc immobilier, suivez le statut de disponibilité et visualisez les caractéristiques d'APS.
+            Gérez votre parc immobilier, suivez le statut de disponibilité et visualisez les caractéristiques de SpaceOne.
           </p>
         </div>
         <button
@@ -266,18 +267,37 @@ export default function ApartmentsTab({
                 >
                   <Edit2 className="w-4 h-4" />
                 </button>
-                <button
-                  id={`btn-delete-apt-${apt.id}`}
-                  onClick={() => {
-                    if (window.confirm(`Êtes-vous sûr de vouloir supprimer ${apt.name} ? Cela retirera également toutes les tâches ménagères et les réservations liées.`)) {
-                      onDeleteApartment(apt.id);
-                    }
-                  }}
-                  className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
-                  title="Supprimer ce logement"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                {deleteConfirmId === apt.id ? (
+                  <div className="flex items-center gap-1 bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-100 animate-pulse">
+                    <span className="text-[10px] font-bold text-rose-600 font-sans">Supprimer ?</span>
+                    <button
+                      onClick={() => {
+                        onDeleteApartment(apt.id);
+                        setDeleteConfirmId(null);
+                      }}
+                      className="px-2 py-0.5 bg-rose-600 text-white rounded text-[10px] font-bold hover:bg-rose-700 transition-colors uppercase font-sans cursor-pointer"
+                    >
+                      Oui
+                    </button>
+                    <button
+                      onClick={() => setDeleteConfirmId(null)}
+                      className="px-2 py-0.5 bg-slate-200 text-slate-700 rounded text-[10px] font-bold hover:bg-slate-300 transition-colors uppercase font-sans cursor-pointer"
+                    >
+                      Non
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    id={`btn-delete-apt-${apt.id}`}
+                    onClick={() => {
+                      setDeleteConfirmId(apt.id);
+                    }}
+                    className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
+                    title="Supprimer ce logement"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -287,7 +307,7 @@ export default function ApartmentsTab({
           <div className="col-span-full bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl p-12 text-center text-slate-500 font-sans">
             <Building className="w-12 h-12 mx-auto text-slate-300 mb-4" />
             <p className="font-semibold text-lg">Aucun logement trouvé</p>
-            <p className="text-sm mt-1">Essayer d'ajuster votre recherche ou ajoutez un tout nouvel hébergement d'APS.</p>
+            <p className="text-sm mt-1">Essayer d'ajuster votre recherche ou ajoutez un tout nouvel hébergement SpaceOne.</p>
           </div>
         )}
       </div>
@@ -295,8 +315,8 @@ export default function ApartmentsTab({
       {/* Modal d'ajout d'appartement */}
       {isAddOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-fade-in">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden animate-fade-in">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between shrink-0">
               <h3 className="font-semibold text-slate-900 text-lg">Ajouter un Nouvel Hébergement</h3>
               <button
                 onClick={() => setIsAddOpen(false)}
@@ -305,7 +325,7 @@ export default function ApartmentsTab({
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <form onSubmit={handleAddSubmit} className="p-6 space-y-4">
+            <form onSubmit={handleAddSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5 font-sans">
                   Nom du Logement *
@@ -313,7 +333,7 @@ export default function ApartmentsTab({
                 <input
                   type="text"
                   required
-                  placeholder="Ex: La Suite Royale Sungani"
+                  placeholder="Ex: La Suite Royale Prestige"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="w-full text-slate-800 placeholder-slate-400 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-slate-400 font-sans"
@@ -483,8 +503,8 @@ export default function ApartmentsTab({
       {/* Modal d'édition d'appartement */}
       {editingApt && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-fade-in">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden animate-fade-in">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between shrink-0">
               <h3 className="font-semibold text-slate-900 text-lg">Modifier - {editingApt.name}</h3>
               <button
                 onClick={() => setEditingApt(null)}
@@ -493,7 +513,7 @@ export default function ApartmentsTab({
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <form onSubmit={handleEditSubmit} className="p-6 space-y-4">
+            <form onSubmit={handleEditSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5 font-sans">
                   Nom du Logement

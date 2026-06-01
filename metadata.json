@@ -1,6 +1,6 @@
 {
-  "name": "APS \"Auberge Paul Sungani\"",
-  "description": "Un tableau de bord haute performance pour gérer les réservations d'appartements, les plannings de nettoyage, les calendriers d'occupation et rédiger des communications IA pour les clients de l'Auberge Paul Sungani.",
+  "name": "SpaceOne",
+  "description": "Un tableau de bord de conciergerie haute performance pour gérer les réservations, les plannings de nettoyage, les calendriers d'occupation et rédiger des communications assistées par l'IA de SpaceOne.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

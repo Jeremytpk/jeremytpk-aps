@@ -22,6 +22,8 @@ export default function CleaningTab({
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [apartmentFilter, setApartmentFilter] = useState<string>("all");
 
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
   // Add Task form states
   const [apartmentId, setApartmentId] = useState("");
   const [date, setDate] = useState("");
@@ -129,22 +131,24 @@ export default function CleaningTab({
             Coordonnez le personnel d'entretien, gérez les fiches de nettoyage de départ et suivez la propreté en temps réel.
           </p>
         </div>
-        <button
-          id="btn-add-cleaning"
-          onClick={() => {
-            if (apartments.length === 0) {
-              alert("Veuillez d'abord insérer un hébergement !");
-              return;
-            }
-            setApartmentId(apartments[0].id);
-            setDate(new Date().toISOString().substring(0, 10)); // Default to today
-            setIsAddOpen(true);
-          }}
-          className="inline-flex items-center gap-2 justify-center bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors shadow-sm cursor-pointer animate-fade-in"
-        >
-          <Plus className="w-4 h-4" />
-          Planifier un Ménage
-        </button>
+        {apartments.length === 0 ? (
+          <div className="text-xs font-semibold text-amber-600 bg-amber-50/55 px-3.5 py-2 border border-amber-100/70 rounded-xl font-sans animate-fade-in">
+            ⚠️ Créez d'abord un logement pour planifier un ménage
+          </div>
+        ) : (
+          <button
+            id="btn-add-cleaning"
+            onClick={() => {
+              setApartmentId(apartments[0].id);
+              setDate(new Date().toISOString().substring(0, 10)); // Default to today
+              setIsAddOpen(true);
+            }}
+            className="inline-flex items-center gap-2 justify-center bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors shadow-sm cursor-pointer animate-fade-in"
+          >
+            <Plus className="w-4 h-4" />
+            Planifier un Ménage
+          </button>
+        )}
       </div>
 
       {/* Filtres ménage */}
@@ -284,18 +288,37 @@ export default function CleaningTab({
                   <Edit className="w-3.5 h-3.5" />
                   Modifier personnel/notes
                 </button>
-                <button
-                  id={`btn-delete-clean-${task.id}`}
-                  onClick={() => {
-                    if (window.confirm("Êtes-vous certain de vouloir supprimer cette planification de nettoyage ?")) {
-                      onDeleteCleaningTask(task.id);
-                    }
-                  }}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 text-xs text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-md border border-rose-50 font-sans cursor-pointer"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  Supprimer
-                </button>
+                {deleteConfirmId === task.id ? (
+                  <div className="flex items-center gap-1.5 bg-rose-50 px-2 py-1 rounded-md border border-rose-100 animate-pulse">
+                    <span className="text-[10px] font-bold text-rose-600 font-sans">Supprimer ?</span>
+                    <button
+                      onClick={() => {
+                        onDeleteCleaningTask(task.id);
+                        setDeleteConfirmId(null);
+                      }}
+                      className="px-2 py-0.5 bg-rose-600 text-white rounded text-[10px] font-bold hover:bg-rose-700 transition-colors uppercase font-sans cursor-pointer"
+                    >
+                      Oui
+                    </button>
+                    <button
+                      onClick={() => setDeleteConfirmId(null)}
+                      className="px-2 py-0.5 bg-slate-200 text-slate-700 rounded text-[10px] font-bold hover:bg-slate-300 transition-colors uppercase font-sans cursor-pointer"
+                    >
+                      Non
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    id={`btn-delete-clean-${task.id}`}
+                    onClick={() => {
+                      setDeleteConfirmId(task.id);
+                    }}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-md border border-rose-50 font-sans cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Supprimer
+                  </button>
+                )}
               </div>
             </div>
           );
@@ -313,8 +336,8 @@ export default function CleaningTab({
       {/* Modal d'Ajout */}
       {isAddOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-fade-in">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden animate-fade-in">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between shrink-0">
               <h3 className="font-semibold text-slate-900 text-lg">Planifier un Nouveau Ménage</h3>
               <button
                 onClick={() => setIsAddOpen(false)}
@@ -323,7 +346,7 @@ export default function CleaningTab({
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <form onSubmit={handleAddSubmit} className="p-6 space-y-4">
+            <form onSubmit={handleAddSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5 font-sans">
                   Sélectionner l'Hébergement *
@@ -418,8 +441,8 @@ export default function CleaningTab({
       {/* Modal d'édition des notes/personnel */}
       {editingTask && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-fade-in">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden animate-fade-in">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between shrink-0">
               <h3 className="font-semibold text-slate-900 text-lg">Modifier la Tâche de Ménage</h3>
               <button
                 onClick={() => setEditingTask(null)}
@@ -428,7 +451,7 @@ export default function CleaningTab({
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <form onSubmit={handleEditSubmit} className="p-6 space-y-4">
+            <form onSubmit={handleEditSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5 font-sans">
                   Date

@@ -55,7 +55,7 @@ async function startServer() {
       const client = getAIClient();
 
       const contextPrompt = `
-Vous êtes un hôte expert de "L'Auberge Paul Sungani" (APS), des logements de prestige et de charme.
+Vous êtes un hôte expert de "SpaceOne", des logements de prestige et de charme.
 Votre objectif est de rédiger un message extrêmement chaleureux, professionnel, poli, accueillant et précis à l'attention d'un voyageur.
 Le message doit être rédigé entièrement en français.
 
@@ -69,7 +69,7 @@ Voici les détails de la réservation en cours :
 L'hôte souhaite rédiger un message pour l'objectif de communication suivant :
 "${prompt}"
 
-Veuillez rédiger un message soigné, professionnel et convivial, prêt à être envoyé par copier-coller. Conservez toujours un ton très respectueux, accueillant et digne de l'Auberge Paul Sungani. N'incluez pas de crochets ou de balises de texte à remplacer (comme [Votre Nom]), utilisez des alternatives pertinentes ou signez "L'équipe de l'Auberge Paul Sungani" ou "Paul". Utilisez un formatage clair et aéré (paragraphes, listes si nécessaire) pour rendre la lecture agréable.
+Veuillez rédiger un message soigné, professionnel et convivial, prêt à être envoyé par copier-coller. Conservez toujours un ton très respectueux, accueillant et digne de SpaceOne. N'incluez pas de crochets ou de balises de texte à remplacer (comme [Votre Nom]), utilisez des alternatives pertinentes ou signez "L'équipe de SpaceOne". Utilisez un formatage clair et aéré (paragraphes, listes si nécessaire) pour rendre la lecture agréable.
       `.trim();
 
       const response = await client.models.generateContent({

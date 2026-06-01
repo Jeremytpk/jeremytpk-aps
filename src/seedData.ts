@@ -3,7 +3,7 @@ import { Apartment, Booking, CleaningTask, MessageThread } from "./types";
 export const initialApartments: Apartment[] = [
   {
     id: "apt-1",
-    name: "La Suite Prestige Sungani",
+    name: "La Suite Prestige SpaceOne",
     address: "24 Rue de Rivoli, 75001 Paris",
     rooms: 2,
     beds: 3,
@@ -23,7 +23,7 @@ export const initialApartments: Apartment[] = [
   },
   {
     id: "apt-3",
-    name: "Le Chalet des Sommets - APS",
+    name: "Le Chalet des Sommets - SpaceOne",
     address: "410 Chemin du Sommet, 74400 Chamonix",
     rooms: 3,
     beds: 5,
@@ -143,13 +143,13 @@ export const initialMessageThreads: MessageThread[] = [
     id: "thread-1",
     bookingId: "book-1",
     guestName: "Delphine Mercier",
-    apartmentName: "La Suite Prestige Sungani",
+    apartmentName: "La Suite Prestige SpaceOne",
     lastUpdated: "2026-05-29T10:30:00Z",
     messages: [
       {
         id: "msg-1-1",
         sender: "guest",
-        text: "Bonjour Paul ! Nous sommes bien arrivés. La suite est magnifique ! Petite question : quel est le mot de passe Wi-Fi ?",
+        text: "Bonjour ! Nous sommes bien arrivés. La suite est magnifique ! Petite question : quel est le mot de passe Wi-Fi ?",
         timestamp: "2026-05-25T15:00:00Z"
       },
       {
@@ -161,7 +161,7 @@ export const initialMessageThreads: MessageThread[] = [
       {
         id: "msg-1-3",
         sender: "guest",
-        text: "Super, merci beaucoup ! Recommandez-vous un bon café à proximité de l'Auberge avec une belle terrasse extérieure ?",
+        text: "Super, merci beaucoup ! Recommandez-vous un bon café à proximité avec une belle terrasse extérieure ?",
         timestamp: "2026-05-29T10:30:00Z"
       }
     ]

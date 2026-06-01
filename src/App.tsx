@@ -27,6 +27,8 @@ import {
   Briefcase,
   DollarSign,
   AlertTriangle,
+  Menu,
+  X,
 } from "lucide-react";
 
 export default function App() {
@@ -38,6 +40,7 @@ export default function App() {
 
   // View control
   const [activeTab, setActiveTab] = useState<"overview" | "apartments" | "bookings" | "cleaning" | "chat">("overview");
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   // Gemini configuration notification state
   const [aiConfigured, setAiConfigured] = useState<boolean>(true);
@@ -138,7 +141,7 @@ export default function App() {
         {
           id: `msg-${Date.now()}-welcome`,
           sender: "host",
-          text: `Bonjour ${booking.guestName} ! Nous sommes ravis de vous confirmer votre séjour du ${booking.checkIn} au ${booking.checkOut} à l'Auberge Paul Sungani. N'hésitez pas si vous avez des questions !`,
+          text: `Bonjour ${booking.guestName} ! Nous sommes ravis de vous confirmer votre séjour du ${booking.checkIn} au ${booking.checkOut} chez SpaceOne. N'hésitez pas si vous avez des questions !`,
           timestamp: new Date().toISOString(),
         },
       ],
@@ -272,82 +275,210 @@ export default function App() {
 
   return (
     <div id="airbnb-app-root" className="min-h-screen bg-slate-50 text-slate-900 selection:bg-slate-900 selection:text-white pb-16">
-      {/* Upper Navigation Bar */}
-      <header className="bg-white border-b border-slate-100 sticky top-0 z-45 shadow-3xs">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          {/* Éléments de marque */}
+      {/* Slide Menu Dropdown/Drawer Backdrop */}
+      {isMenuOpen && (
+        <div 
+          onClick={() => setIsMenuOpen(false)}
+          className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 transition-opacity duration-300 animate-fade-in cursor-pointer"
+        />
+      )}
+
+      {/* Slide Menu Drawer Panel */}
+      <div 
+        className={`fixed inset-y-0 left-0 w-80 max-w-[calc(100vw-3rem)] bg-white z-55 shadow-2xl border-r border-slate-100 flex flex-col h-full transform transition-transform duration-300 ease-out ${
+          isMenuOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        {/* Slide Menu Header (Brand and Close Button) */}
+        <div className="p-6 border-b border-slate-150 flex items-center justify-between bg-slate-50/50">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-sm font-bold tracking-wider font-sans text-lg border-2 border-white ring-2 ring-blue-600/30">
-              APS
+            <div className="w-10 h-10 bg-gradient-to-tr from-slate-950 via-slate-900 to-blue-900 rounded-xl flex items-center justify-center text-white shadow-md border border-slate-800 ring-4 ring-blue-500/10 shrink-0 relative overflow-hidden">
+              <Layers className="w-5 h-5 text-blue-400" />
+              <Sparkles className="w-2.5 h-2.5 text-amber-300 absolute -top-0.5 -right-0.5 animate-pulse" />
             </div>
             <div>
-              <h1 className="text-lg font-bold tracking-tight text-slate-900 font-sans leading-none">
-                APS "Auberge Paul Sungani"
-              </h1>
-              <p className="text-xs text-slate-400 font-sans mt-0.5">
+              <div className="flex items-center gap-1">
+                <span className="text-sm font-black tracking-wider text-slate-900 font-mono">
+                  SPACE
+                </span>
+                <span className="text-[10px] font-black tracking-wide text-blue-600 bg-blue-50 border border-blue-100/50 px-1.5 py-0.5 rounded-md font-mono">
+                  ONE
+                </span>
+              </div>
+              <p className="text-[9px] font-bold text-slate-400 font-sans uppercase tracking-widest mt-0.5">
+                Conciergerie de Prestige
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setIsMenuOpen(false)}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+            title="Fermer le menu"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Slide Menu Navigation Links */}
+        <nav className="p-6 space-y-2 flex-grow overflow-y-auto">
+          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-sans mb-4 px-2">
+            Navigation Principale
+          </div>
+          
+          <button
+            onClick={() => {
+              setActiveTab("overview");
+              setIsMenuOpen(false);
+            }}
+            className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-semibold font-sans transition-all cursor-pointer ${
+              activeTab === "overview"
+                ? "bg-blue-600 text-white shadow-xs"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+            }`}
+          >
+            <CalendarIcon className={`w-4 h-4 ${activeTab === "overview" ? "text-white" : "text-slate-400"}`} />
+            <div className="flex-grow text-left">Aperçu & Calendrier</div>
+          </button>
+
+          <button
+            onClick={() => {
+              setActiveTab("apartments");
+              setIsMenuOpen(false);
+            }}
+            className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-semibold font-sans transition-all cursor-pointer ${
+              activeTab === "apartments"
+                ? "bg-blue-600 text-white shadow-xs"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+            }`}
+          >
+            <Building className={`w-4 h-4 ${activeTab === "apartments" ? "text-white" : "text-slate-400"}`} />
+            <div className="flex-grow text-left">Logements de SpaceOne</div>
+            <span className={`text-xs px-2 py-0.5 rounded-full ${
+              activeTab === "apartments" ? "bg-blue-500 text-white/90" : "bg-slate-100 text-slate-500 font-mono"
+            }`}>
+              {apartments.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => {
+              setActiveTab("bookings");
+              setIsMenuOpen(false);
+            }}
+            className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-semibold font-sans transition-all cursor-pointer ${
+              activeTab === "bookings"
+                ? "bg-blue-600 text-white shadow-xs"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+            }`}
+          >
+            <Briefcase className={`w-4 h-4 ${activeTab === "bookings" ? "text-white" : "text-slate-400"}`} />
+            <div className="flex-grow text-left">Réservations</div>
+            <span className={`text-xs px-2 py-0.5 rounded-full ${
+              activeTab === "bookings" ? "bg-blue-500 text-white/90" : "bg-slate-100 text-slate-500 font-mono"
+            }`}>
+              {bookings.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => {
+              setActiveTab("cleaning");
+              setIsMenuOpen(false);
+            }}
+            className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-semibold font-sans transition-all cursor-pointer ${
+              activeTab === "cleaning"
+                ? "bg-blue-600 text-white shadow-xs"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+            }`}
+          >
+            <Wrench className={`w-4 h-4 ${activeTab === "cleaning" ? "text-white" : "text-slate-400"}`} />
+            <div className="flex-grow text-left">Tâches de Ménage</div>
+            {pendingTurnoversCount > 0 && (
+              <span className={`text-xs px-2 py-0.5 rounded-full ${
+                activeTab === "cleaning" ? "bg-blue-500 text-white/90" : "bg-red-50 text-red-600 font-mono"
+              }`}>
+                {pendingTurnoversCount}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => {
+              setActiveTab("chat");
+              setIsMenuOpen(false);
+            }}
+            className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-semibold font-sans transition-all cursor-pointer relative ${
+              activeTab === "chat"
+                ? "bg-blue-600 text-white shadow-xs"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+            }`}
+          >
+            <MessageSquare className={`w-4 h-4 ${activeTab === "chat" ? "text-white" : "text-slate-400"}`} />
+            <div className="flex-grow text-left">Messagerie AI</div>
+            {threads.length > 0 && (
+              <span className={`text-xs px-2 py-0.5 rounded-full ${
+                activeTab === "chat" ? "bg-blue-500 text-white/90" : "bg-blue-50 text-blue-600 font-mono"
+              }`}>
+                {threads.length}
+              </span>
+            )}
+            {activeTab !== "chat" && (
+              <span className="absolute top-4 right-4 w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+            )}
+          </button>
+        </nav>
+
+        {/* Slide Menu Footer */}
+        <div className="p-6 border-t border-slate-100 bg-slate-50/50">
+          <p className="text-[10px] text-slate-400 font-sans">
+            © 2026 SpaceOne. Tous droits réservés. Accès sécurisé.
+          </p>
+        </div>
+      </div>
+
+      {/* Upper Navigation Bar */}
+      <header className="bg-white border-b border-slate-100 sticky top-0 z-45 shadow-3xs">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between gap-4">
+          {/* Éléments de marque */}
+          <div className="flex items-center gap-3 md:gap-4.5">
+            <div className="w-11 h-11 bg-gradient-to-tr from-slate-950 via-slate-900 to-blue-900 rounded-xl flex items-center justify-center text-white shadow-lg border border-slate-800 ring-4 ring-blue-500/10 shrink-0 relative overflow-hidden group">
+              <Layers className="w-5.5 h-5.5 text-blue-400 transition-transform duration-300 group-hover:scale-110" />
+              <Sparkles className="w-3 h-3 text-amber-300 absolute -top-0.5 -right-0.5 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-lg md:text-xl font-black tracking-wider text-slate-900 font-mono leading-none">
+                  SPACE
+                </span>
+                <span className="text-[10px] md:text-xs font-black tracking-wide text-blue-600 bg-blue-50 border border-blue-100/50 px-2 py-0.5 rounded-lg font-mono">
+                  ONE
+                </span>
+              </div>
+              <p className="text-[9px] md:text-[10px] font-bold text-slate-400 font-sans tracking-wide mt-1">
                 Portail de Conciergerie & PMS de Prestige
               </p>
             </div>
           </div>
 
-          {/* Menu des onglets */}
-          <nav className="flex flex-wrap items-center gap-1">
+          {/* Actions & Menu Trigger Button */}
+          <div className="flex items-center gap-3">
+            {/* Desktop-only quick info badge */}
+            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-50 border border-slate-100 text-slate-500 text-[10px] font-bold tracking-wider uppercase font-sans">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse block"></span>
+              <span>Système Actif</span>
+            </div>
+
+            {/* Menu toggle button */}
             <button
-              onClick={() => setActiveTab("overview")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider font-sans transition-all cursor-pointer ${
-                activeTab === "overview"
-                  ? "bg-slate-900 text-white shadow-xs"
-                  : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"
-              }`}
+              id="menu-toggle-btn"
+              onClick={() => setIsMenuOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white shadow-md font-semibold tracking-wider font-sans text-xs uppercase cursor-pointer transition-all duration-200 border border-transparent ring-2 ring-blue-600/10 active:scale-95"
+              title="Ouvrir le menu de navigation"
             >
-              Aperçu & Calendrier
+              <Menu className="w-4 h-4" />
+              <span>Menu</span>
             </button>
-            <button
-              id="tab-btn-apartments"
-              onClick={() => setActiveTab("apartments")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider font-sans transition-all cursor-pointer ${
-                activeTab === "apartments"
-                  ? "bg-slate-900 text-white shadow-xs"
-                  : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"
-              }`}
-            >
-              Logements ({apartments.length})
-            </button>
-            <button
-              id="tab-btn-bookings"
-              onClick={() => setActiveTab("bookings")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider font-sans transition-all cursor-pointer ${
-                activeTab === "bookings"
-                  ? "bg-slate-900 text-white shadow-xs"
-                  : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"
-              }`}
-            >
-              Réservations ({bookings.length})
-            </button>
-            <button
-              id="tab-btn-cleaning"
-              onClick={() => setActiveTab("cleaning")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider font-sans transition-all cursor-pointer ${
-                activeTab === "cleaning"
-                  ? "bg-slate-900 text-white shadow-xs"
-                  : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"
-              }`}
-            >
-              Ménage ({pendingTurnoversCount} en attente)
-            </button>
-            <button
-              id="tab-btn-communication"
-              onClick={() => setActiveTab("chat")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider font-sans transition-all cursor-pointer relative ${
-                activeTab === "chat"
-                  ? "bg-slate-900 text-white shadow-xs"
-                  : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"
-              }`}
-            >
-              Messagerie ({threads.length})
-              <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-slate-900 animate-ping" />
-            </button>
-          </nav>
+          </div>
         </div>
       </header>
 
@@ -359,7 +490,7 @@ export default function App() {
             <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
             <div>
               <span className="font-semibold block">La clé API Gemini n'est pas configurée.</span>
-              L'assistant de messagerie d'Auberge Paul Sungani fonctionnera avec des modèles locaux limités. Pour débloquer la génération premium de réponses rédigées par l'IA d'APS, configurez la clé <code className="font-mono bg-amber-100 px-1 py-0.5 rounded-sm">GEMINI_API_KEY</code> dans votre panneau des Secrets.
+              L'assistant de messagerie de SpaceOne fonctionnera avec des modèles locaux limités. Pour débloquer la génération premium de réponses rédigées par l'IA de SpaceOne, configurez la clé <code className="font-mono bg-amber-100 px-1 py-0.5 rounded-sm">GEMINI_API_KEY</code> dans votre panneau des Secrets.
             </div>
           </div>
         )}
@@ -369,10 +500,10 @@ export default function App() {
             {/* Titre principal */}
             <div>
               <h2 className="text-2xl font-semibold tracking-tight text-slate-900 font-sans">
-                Aperçu de l'Auberge & Suivi des Ménages
+                Aperçu SpaceOne & Suivi des Ménages
               </h2>
               <p className="text-sm text-slate-500 font-sans mt-0.5">
-                Surveillance de l'état d'occupation en temps réel, coordination des rotations de nettoyage et messagerie assistée par l'IA d'APS.
+                Surveillance de l'état d'occupation en temps réel, coordination des rotations de nettoyage et messagerie assistée par l'IA de SpaceOne.
               </p>
             </div>
 
@@ -388,7 +519,7 @@ export default function App() {
                     {occupancyPercentage}%
                   </div>
                   <span className="text-xs text-slate-500 block">
-                    {occupiedCount} sur {totalApartmentsCount} logements occupés d'APS
+                    {occupiedCount} sur {totalApartmentsCount} logements occupés de SpaceOne
                   </span>
                 </div>
                 <div className="p-3.5 bg-slate-50 text-slate-800 rounded-xl">

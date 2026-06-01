@@ -117,7 +117,7 @@ export default function CalendarTab({ apartments, bookings }: CalendarTabProps) 
             {/* Ligne des jours */}
             <div className="grid grid-cols-15 bg-slate-50/50">
               <div className="col-span-3 p-4 font-semibold text-xs text-slate-500 uppercase tracking-wider font-sans flex items-center">
-                Logement d'APS
+                Logement SpaceOne
               </div>
               {days.map((day, idx) => {
                 const { dayName, dayNum, isToday } = formatDateLabel(day);

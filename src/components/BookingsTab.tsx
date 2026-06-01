@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Booking, Apartment } from "../types";
-import { Calendar, User, Mail, Phone, DollarSign, Plus, Trash2, Edit3, Filter, Tag, X, CalendarDays } from "lucide-react";
+import { Calendar, User, Mail, Phone, DollarSign, Plus, Trash2, Edit3, Filter, Tag, X, CalendarDays, ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react";
 
 interface BookingsTabProps {
   bookings: Booking[];
@@ -22,6 +22,7 @@ export default function BookingsTab({
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [apartmentFilter, setApartmentFilter] = useState<string>("all");
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   // Add booking states
   const [apartmentId, setApartmentId] = useState("");
@@ -48,9 +49,25 @@ export default function BookingsTab({
     setNotes("");
   };
 
+  // Validation for overlapping checks
+  const getOverlappingBooking = (aptId: string, start: string, end: string, ignoreId?: string) => {
+    if (!aptId || !start || !end) return null;
+    return bookings.find((b) => {
+      if (b.status === "cancelled") return false;
+      if (b.apartmentId !== aptId) return false;
+      if (ignoreId && b.id === ignoreId) return false;
+      return start < b.checkOut && end > b.checkIn;
+    });
+  };
+
   const handleAddSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!apartmentId || !guestName || !checkIn || !checkOut) return;
+
+    if (getOverlappingBooking(apartmentId, checkIn, checkOut)) {
+      alert("Erreur de réservation : Ces dates de séjour chevauchent une réservation existante !");
+      return;
+    }
 
     const newBooking: Booking = {
       id: "book-" + Date.now(),
@@ -74,6 +91,12 @@ export default function BookingsTab({
   const handleEditSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingBooking) return;
+
+    if (getOverlappingBooking(editingBooking.apartmentId, editingBooking.checkIn, editingBooking.checkOut, editingBooking.id)) {
+      alert("Erreur de modification : Les nouvelles dates chevauchent une réservation existante !");
+      return;
+    }
+
     onUpdateBooking(editingBooking);
     setEditingBooking(null);
   };
@@ -100,6 +123,11 @@ export default function BookingsTab({
     return matchesSearch && matchesStatus && matchesApartment;
   });
 
+  const overlapWarning = getOverlappingBooking(apartmentId, checkIn, checkOut);
+  const editOverlapWarning = editingBooking
+    ? getOverlappingBooking(editingBooking.apartmentId, editingBooking.checkIn, editingBooking.checkOut, editingBooking.id)
+    : null;
+
   return (
     <div id="bookings-tab-container" className="space-y-6">
       {/* En-tête */}
@@ -112,21 +140,23 @@ export default function BookingsTab({
             Enregistrez les séjours, planifiez les arrivées, gérez la facturation et suivez les statuts de l'Auberge.
           </p>
         </div>
-        <button
-          id="btn-add-booking"
-          onClick={() => {
-            if (apartments.length === 0) {
-              alert("Veuillez d'abord ajouter au moins un hébergement !");
-              return;
-            }
-            setApartmentId(apartments[0].id);
-            setIsAddOpen(true);
-          }}
-          className="inline-flex items-center gap-2 justify-center bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors shadow-sm cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          Nouvelle Réservation
-        </button>
+        {apartments.length === 0 ? (
+          <div className="text-xs font-semibold text-amber-600 bg-amber-50/55 px-3.5 py-2 border border-amber-100/70 rounded-xl font-sans animate-fade-in">
+            ⚠️ Créez d'abord un logement pour enregistrer une réservation
+          </div>
+        ) : (
+          <button
+            id="btn-add-booking"
+            onClick={() => {
+              setApartmentId(apartments[0].id);
+              setIsAddOpen(true);
+            }}
+            className="inline-flex items-center gap-2 justify-center bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors shadow-sm cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            Nouvelle Réservation
+          </button>
+        )}
       </div>
 
       {/* Options de filtrage */}
@@ -274,18 +304,37 @@ export default function BookingsTab({
                       >
                         <Edit3 className="w-4 h-4" />
                       </button>
-                      <button
-                        id={`btn-delete-booking-${b.id}`}
-                        onClick={() => {
-                          if (window.confirm(`Êtes-vous certain de vouloir supprimer la réservation de ${b.guestName} ? Les historiques de messagerie et de nettoyage liés seront conservés.`)) {
-                            onDeleteBooking(b.id);
-                          }
-                        }}
-                        className="p-1.5 hover:bg-rose-50 rounded-lg text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
-                        title="Supprimer la réservation"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {deleteConfirmId === b.id ? (
+                        <div className="flex items-center gap-1 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-100 animate-pulse">
+                          <span className="text-[9px] font-bold text-rose-600 font-sans">Supprimer ?</span>
+                          <button
+                            onClick={() => {
+                              onDeleteBooking(b.id);
+                              setDeleteConfirmId(null);
+                            }}
+                            className="px-1.5 py-0.5 bg-rose-600 text-white rounded text-[9px] font-bold hover:bg-rose-700 transition-colors uppercase font-sans cursor-pointer"
+                          >
+                            Oui
+                          </button>
+                          <button
+                            onClick={() => setDeleteConfirmId(null)}
+                            className="px-1 py-0.5 bg-slate-200 text-slate-700 rounded text-[9px] font-bold hover:bg-slate-300 transition-colors uppercase font-sans cursor-pointer"
+                          >
+                            Non
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          id={`btn-delete-booking-${b.id}`}
+                          onClick={() => {
+                            setDeleteConfirmId(b.id);
+                          }}
+                          className="p-1.5 hover:bg-rose-50 rounded-lg text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                          title="Supprimer la réservation"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -308,8 +357,8 @@ export default function BookingsTab({
       {/* Modal d'Ajout de Réservation */}
       {isAddOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-fade-in">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden animate-fade-in">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between shrink-0">
               <h3 className="font-semibold text-slate-900 text-lg">Saisir une Nouvelle Réservation</h3>
               <button
                 onClick={() => setIsAddOpen(false)}
@@ -318,7 +367,7 @@ export default function BookingsTab({
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <form onSubmit={handleAddSubmit} className="p-6 space-y-4 max-h-[85vh] overflow-y-auto">
+            <form onSubmit={handleAddSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
               {/* Choix du logement */}
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5 font-sans">
@@ -399,6 +448,29 @@ export default function BookingsTab({
                 </div>
               </div>
 
+              {/* Mini Calendrier Interactif des Disponibilités */}
+              {apartmentId && (
+                <MiniCalendarPicker
+                  apartmentId={apartmentId}
+                  checkIn={checkIn}
+                  checkOut={checkOut}
+                  onSelectDates={(inDate, outDate) => {
+                    setCheckIn(inDate);
+                    setCheckOut(outDate);
+                  }}
+                  bookings={bookings}
+                />
+              )}
+
+              {overlapWarning && (
+                <div className="p-3 bg-rose-50 border border-rose-150 text-rose-700 text-xs font-bold font-sans rounded-xl flex items-center gap-2 animate-pulse">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0 text-rose-600" />
+                  <div>
+                    ⚠️ Cette date de séjour chevauche une réservation existante : {overlapWarning.guestName} ({overlapWarning.checkIn} au {overlapWarning.checkOut}).
+                  </div>
+                </div>
+              )}
+
               {/* Caractéristiques & Montant */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
@@ -478,8 +550,8 @@ export default function BookingsTab({
       {/* Modal d'édition de séjour */}
       {editingBooking && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-fade-in">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden animate-fade-in">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between shrink-0">
               <h3 className="font-semibold text-slate-900 text-lg">Modifier la Réservation</h3>
               <button
                 onClick={() => setEditingBooking(null)}
@@ -488,11 +560,11 @@ export default function BookingsTab({
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <form onSubmit={handleEditSubmit} className="p-6 space-y-4 max-h-[85vh] overflow-y-auto">
+            <form onSubmit={handleEditSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
               {/* Choix du logement */}
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5 font-sans">
-                  Hébergement d'APS
+                  Hébergement SpaceOne
                 </label>
                 <select
                   value={editingBooking.apartmentId}
@@ -564,6 +636,33 @@ export default function BookingsTab({
                   />
                 </div>
               </div>
+
+              {/* Mini Calendrier Interactif des Disponibilités */}
+              {editingBooking.apartmentId && (
+                <MiniCalendarPicker
+                  apartmentId={editingBooking.apartmentId}
+                  checkIn={editingBooking.checkIn}
+                  checkOut={editingBooking.checkOut}
+                  onSelectDates={(inDate, outDate) => {
+                    setEditingBooking({
+                      ...editingBooking,
+                      checkIn: inDate,
+                      checkOut: outDate,
+                    });
+                  }}
+                  bookings={bookings}
+                  ignoreBookingId={editingBooking.id}
+                />
+              )}
+
+              {editOverlapWarning && (
+                <div className="p-3 bg-rose-50 border border-rose-150 text-rose-700 text-xs font-bold font-sans rounded-xl flex items-center gap-2 animate-pulse">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0 text-rose-600" />
+                  <div>
+                    ⚠️ Cette date de séjour chevauche une réservation existante : {editOverlapWarning.guestName} ({editOverlapWarning.checkIn} au {editOverlapWarning.checkOut}).
+                  </div>
+                </div>
+              )}
 
               {/* Caractéristiques */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -649,6 +748,275 @@ export default function BookingsTab({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+interface MiniCalendarPickerProps {
+  apartmentId: string;
+  checkIn: string;
+  checkOut: string;
+  onSelectDates: (checkIn: string, checkOut: string) => void;
+  bookings: Booking[];
+  ignoreBookingId?: string;
+}
+
+function MiniCalendarPicker({
+  apartmentId,
+  checkIn,
+  checkOut,
+  onSelectDates,
+  bookings,
+  ignoreBookingId,
+}: MiniCalendarPickerProps) {
+  // We can default the month to May 2026 (or extract from checkIn)
+  const initialDate = checkIn ? new Date(checkIn) : new Date("2026-05-29");
+  const [currentYear, setCurrentYear] = useState(initialDate.getFullYear());
+  const [currentMonth, setCurrentMonth] = useState(initialDate.getMonth()); // 0-indexed
+
+  // Months labels
+  const monthNames = [
+    "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
+    "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"
+  ];
+
+  // Weeks headers
+  const dayLabels = ["Lu", "Ma", "Me", "Je", "Ve", "Sa", "Di"];
+
+  // Total days in month
+  const totalDays = new Date(currentYear, currentMonth + 1, 0).getDate();
+  
+  // Starting day offset (Mon = 0, Sun = 6)
+  const firstDayIndex = (new Date(currentYear, currentMonth, 1).getDay() + 6) % 7;
+
+  // Render month days
+  const calendarDaysList: Array<{ dateStr: string; dayNum: number; isPadding: boolean }> = [];
+
+  // Previous month padding days
+  const prevMonthDaysCount = new Date(currentYear, currentMonth, 0).getDate();
+  for (let i = firstDayIndex - 1; i >= 0; i--) {
+    const prevMonthDate = new Date(currentYear, currentMonth - 1, prevMonthDaysCount - i);
+    calendarDaysList.push({
+      dateStr: prevMonthDate.toISOString().substring(0, 10),
+      dayNum: prevMonthDaysCount - i,
+      isPadding: true,
+    });
+  }
+
+  // Active month days
+  for (let d = 1; d <= totalDays; d++) {
+    // safe format without timezone shifts: YYYY-MM-DD
+    const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    calendarDaysList.push({
+      dateStr,
+      dayNum: d,
+      isPadding: false,
+    });
+  }
+
+  // Next month padding days to complete standard grid
+  const remainingSlots = 42 - calendarDaysList.length; 
+  for (let i = 1; i <= remainingSlots; i++) {
+    const nextMonthDate = new Date(currentYear, currentMonth + 1, i);
+    calendarDaysList.push({
+      dateStr: nextMonthDate.toISOString().substring(0, 10),
+      dayNum: i,
+      isPadding: true,
+    });
+  }
+
+  // Check state for a date
+  const getDayState = (dateStr: string) => {
+    // If before system base date, let's mark it as past so user cannot book past dates
+    const isPast = dateStr < "2026-05-29";
+
+    // Occupied if date is between checkIn (inclusive) and checkOut (exclusive)
+    const activeBooking = bookings.find((b) => {
+      if (b.apartmentId !== apartmentId || b.status === "cancelled") return false;
+      if (ignoreBookingId && b.id === ignoreBookingId) return false;
+      return dateStr >= b.checkIn && dateStr < b.checkOut;
+    });
+
+    const isOccupied = !!activeBooking;
+    
+    // Check selection markers
+    const isCheckIn = checkIn === dateStr;
+    const isCheckOut = checkOut === dateStr;
+    const isBetween = checkIn && checkOut && dateStr > checkIn && dateStr < checkOut;
+
+    return {
+      isPast,
+      isOccupied,
+      isCheckIn,
+      isCheckOut,
+      isBetween,
+      booking: activeBooking,
+    };
+  };
+
+  const handleDayClick = (dateStr: string, isPast: boolean, isOccupied: boolean) => {
+    if (isPast || isOccupied) return;
+
+    if (!checkIn) {
+      // First click: select checkIn
+      onSelectDates(dateStr, "");
+    } else if (checkIn && !checkOut) {
+      if (dateStr < checkIn) {
+        // Earlier clicked: replace checkIn
+        onSelectDates(dateStr, "");
+      } else if (dateStr === checkIn) {
+        // Toggle checkIn off
+        onSelectDates("", "");
+      } else {
+        // Verify no occupied nights in between checkIn and selected checkOut
+        let hasOccupiedInBetween = false;
+        let scanDate = new Date(checkIn);
+        const targetDate = new Date(dateStr);
+
+        while (scanDate < targetDate) {
+          const scanStr = scanDate.toISOString().substring(0, 10);
+          const { isOccupied: blocked } = getDayState(scanStr);
+          if (blocked) {
+            hasOccupiedInBetween = true;
+            break;
+          }
+          scanDate.setDate(scanDate.getDate() + 1);
+        }
+
+        if (hasOccupiedInBetween) {
+          // Cannot cross bookings, reset to clicked date
+          onSelectDates(dateStr, "");
+        } else {
+          onSelectDates(checkIn, dateStr);
+        }
+      }
+    } else {
+      // Both exist model, reset checkIn to clicked day
+      onSelectDates(dateStr, "");
+    }
+  };
+
+  const shiftMonth = (offset: number) => {
+    let newMonth = currentMonth + offset;
+    let newYear = currentYear;
+    if (newMonth > 11) {
+      newMonth = 0;
+      newYear += 1;
+    } else if (newMonth < 0) {
+      newMonth = 11;
+      newYear -= 1;
+    }
+    setCurrentMonth(newMonth);
+    setCurrentYear(newYear);
+  };
+
+  return (
+    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3 mt-3 animate-fade-in text-left">
+      {/* Selector Month Header */}
+      <div className="flex items-center justify-between">
+        <h4 className="text-xs font-bold text-slate-700 tracking-wider font-sans uppercase flex items-center gap-1.5">
+          <CalendarDays className="w-4 h-4 text-slate-500" />
+          Calendrier des Disponibilités
+        </h4>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => shiftMonth(-1)}
+            className="p-1 rounded-md hover:bg-slate-200 text-slate-500 hover:text-slate-700 transition-colors cursor-pointer"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <span className="text-xs font-extrabold text-slate-800 tracking-tight font-sans min-w-[95px] text-center">
+            {monthNames[currentMonth]} {currentYear}
+          </span>
+          <button
+            type="button"
+            onClick={() => shiftMonth(1)}
+            className="p-1 rounded-md hover:bg-slate-200 text-slate-500 hover:text-slate-700 transition-colors cursor-pointer"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Week Header */}
+      <div className="grid grid-cols-7 gap-1 text-center font-bold text-[10px] uppercase text-slate-400 font-sans">
+        {dayLabels.map((lbl, idx) => (
+          <div key={idx}>{lbl}</div>
+        ))}
+      </div>
+
+      {/* Days Grid */}
+      <div className="grid grid-cols-7 gap-1">
+        {calendarDaysList.map((dayObj, idx) => {
+          const { dateStr, dayNum, isPadding } = dayObj;
+          const { isPast, isOccupied, isCheckIn, isCheckOut, isBetween, booking } = getDayState(dateStr);
+
+          // Build classes
+          let btnClasses = "h-8 text-[11px] font-semibold rounded-lg flex flex-col items-center justify-center relative cursor-pointer font-sans transition-all ";
+
+          if (isPadding) {
+            btnClasses += "opacity-35 text-slate-400 ";
+          }
+
+          if (isPast) {
+            btnClasses += "bg-slate-100 text-slate-350 cursor-not-allowed opacity-50 line-through ";
+          } else if (isOccupied) {
+            btnClasses += "bg-rose-50 border border-rose-100/70 text-rose-500 cursor-not-allowed ";
+          } else if (isCheckIn || isCheckOut) {
+            btnClasses += "bg-slate-950 border border-slate-900 text-white font-extrabold shadow-sm scale-105 z-10 ";
+          } else if (isBetween) {
+            btnClasses += "bg-blue-50 border-y border-blue-100 text-blue-700 font-bold ";
+          } else {
+            btnClasses += "bg-white border border-slate-150 text-slate-700 hover:border-slate-400 hover:bg-slate-50 ";
+          }
+
+          const hoverTitle = booking
+            ? `Réservé : ${booking.guestName} (${booking.checkIn} au ${booking.checkOut})`
+            : isPast
+            ? "Date passée"
+            : dateStr;
+
+          return (
+            <button
+              key={idx}
+              type="button"
+              disabled={isPast || isOccupied}
+              onClick={() => handleDayClick(dateStr, isPast, isOccupied)}
+              className={btnClasses}
+              title={hoverTitle}
+            >
+              <span className="font-mono">{dayNum}</span>
+
+              {/* Status indicators */}
+              {isOccupied && !isPast && (
+                <span className="absolute bottom-1 w-1 h-1 rounded-full bg-rose-500 animate-pulse" />
+              )}
+              {(isCheckIn || isCheckOut) && (
+                <span className="absolute bottom-0.5 text-[7px] leading-none opacity-95 font-sans font-black uppercase tracking-wide">
+                  {isCheckIn ? "Arr" : "Dép"}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Legend Map */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 pt-2 border-t border-slate-150 text-[10px] font-sans font-bold text-slate-500">
+        <div className="flex items-center gap-1">
+          <span className="w-2.5 h-2.5 rounded bg-rose-50 border border-rose-100 inline-block shrink-0" />
+          <span>🔴 Réservé (Indisponible)</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="w-2.5 h-2.5 rounded bg-white border border-slate-200 inline-block shrink-0" />
+          <span>⚪ Libre (Disponible)</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="w-2.5 h-2.5 rounded bg-slate-950 inline-block shrink-0" />
+          <span>⚫ Sélection (Check-In / Out)</span>
+        </div>
+      </div>
     </div>
   );
 }
