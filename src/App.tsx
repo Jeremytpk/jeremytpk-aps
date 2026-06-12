@@ -7,6 +7,8 @@ import BookingsTab from "./components/BookingsTab";
 import CleaningTab from "./components/CleaningTab";
 import CalendarTab from "./components/CalendarTab";
 import CommunicationTab from "./components/CommunicationTab";
+import ProfileModal from "./components/ProfileModal";
+import PublicCatalog from "./components/PublicCatalog";
 
 // Firebase
 import { db, auth, handleFirestoreError, OperationType } from "./firebase";
@@ -58,6 +60,8 @@ import {
   RefreshCw,
   Eye,
   Trash2,
+  Copy,
+  Loader2,
 } from "lucide-react";
 
 export default function App() {
@@ -73,6 +77,15 @@ export default function App() {
   const [regPassword, setRegPassword] = useState("");
   const [authError, setAuthError] = useState("");
   const [isLoadingSpace, setIsLoadingSpace] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+
+  // Public catalog states
+  const [publicSpaceId, setPublicSpaceId] = useState<string | null>(null);
+  const [publicOwner, setPublicOwner] = useState<HomeOwner | null>(null);
+  const [publicApartments, setPublicApartments] = useState<Apartment[]>([]);
+  const [publicLoading, setPublicLoading] = useState(false);
+  const [publicError, setPublicError] = useState("");
+  const [copiedLink, setCopiedLink] = useState(false);
 
   // State lists
   const [apartments, setApartments] = useState<Apartment[]>([]);
@@ -94,6 +107,44 @@ export default function App() {
 
   // Gemini configuration notification state
   const [aiConfigured, setAiConfigured] = useState<boolean>(true);
+
+  // Load public shared catalog if space ID parameter is present
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const spaceId = params.get("space");
+    if (spaceId) {
+      setPublicSpaceId(spaceId);
+      const loadPublicSpace = async () => {
+        setPublicLoading(true);
+        setPublicError("");
+        try {
+          const ownerDoc = await getDoc(doc(db, "users", spaceId));
+          if (!ownerDoc.exists()) {
+            setPublicError("Cet espace conciergerie n'existe pas ou l'adresse est incorrecte.");
+            setPublicLoading(false);
+            return;
+          }
+          const ownerData = ownerDoc.data() as HomeOwner;
+          setPublicOwner(ownerData);
+
+          // Listen to or query public apartments
+          const q = query(collection(db, "apartments"), where("ownerId", "==", spaceId));
+          const snap = await getDocs(q);
+          const list: Apartment[] = [];
+          snap.forEach((doc) => {
+            list.push({ id: doc.id, ...doc.data() } as Apartment);
+          });
+          setPublicApartments(list);
+        } catch (err: any) {
+          console.error("Failed to load public workspace:", err);
+          setPublicError("Erreur lors du chargement de l'espace de conciergerie.");
+        } finally {
+          setPublicLoading(false);
+        }
+      };
+      loadPublicSpace();
+    }
+  }, []);
 
   // Auth observer subscription
   useEffect(() => {
@@ -607,6 +658,47 @@ export default function App() {
     }
   };
 
+  // Public Catalog Routing
+  if (publicSpaceId) {
+    if (publicLoading) {
+      return (
+        <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center space-y-4">
+          <Loader2 className="w-8 h-8 animate-spin text-slate-800" />
+          <p className="text-xs font-bold font-sans text-slate-500 uppercase tracking-widest">Chargement de l'Espace de Prestige...</p>
+        </div>
+      );
+    }
+    if (publicError) {
+      return (
+        <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center space-y-4">
+          <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center text-xl font-bold">⚠️</div>
+          <p className="text-sm font-semibold text-slate-700 max-w-sm font-sans">{publicError}</p>
+          <button onClick={() => window.location.href = window.location.origin} className="text-xs font-bold text-blue-600 underline">Retour au portail d'accueil</button>
+        </div>
+      );
+    }
+    if (publicOwner) {
+      return (
+        <PublicCatalog
+          spaceId={publicSpaceId}
+          owner={publicOwner}
+          apartments={publicApartments}
+          onBookingSuccess={() => {
+            // Re-fetch public apartments on successful booking to update real-time statistics
+            const q = query(collection(db, "apartments"), where("ownerId", "==", publicSpaceId));
+            getDocs(q).then((snap) => {
+              const list: Apartment[] = [];
+              snap.forEach((doc) => {
+                list.push({ id: doc.id, ...doc.data() } as Apartment);
+              });
+              setPublicApartments(list);
+            }).catch(e => console.error("Error refreshing public active apartments:", e));
+          }}
+        />
+      );
+    }
+  }
+
   // Light aesthetic Auth view with modern design home in background
   if (!currentUser) {
     return (
@@ -914,9 +1006,18 @@ export default function App() {
           <div className="px-6 py-4 bg-slate-50 border-b border-slate-150 flex flex-col gap-3">
             <div className="flex items-center gap-3">
               {/* Profile Avatar with elegant space profile badge */}
-              <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-750 text-white font-extrabold flex items-center justify-center text-xs tracking-wider shadow-sm border border-white ring-2 ring-blue-600/10 shrink-0">
-                {currentUser.fullName ? currentUser.fullName.split(" ").map(w => w[0]).join("").toUpperCase().substring(0, 2) : "H"}
-              </div>
+              {currentUser.avatarUrl ? (
+                <img
+                  src={currentUser.avatarUrl}
+                  alt={currentUser.fullName}
+                  className="w-10 h-10 rounded-full object-cover shadow-sm border border-white ring-2 ring-blue-600/10 shrink-0"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-750 text-white font-extrabold flex items-center justify-center text-xs tracking-wider shadow-sm border border-white ring-2 ring-blue-600/10 shrink-0">
+                  {currentUser.fullName ? currentUser.fullName.split(" ").map(w => w[0]).join("").toUpperCase().substring(0, 2) : "H"}
+                </div>
+              )}
               <div className="flex-grow min-w-0">
                 <div className="text-xs font-bold text-slate-800 truncate font-sans">
                   {currentUser.fullName}
@@ -933,19 +1034,34 @@ export default function App() {
               </div>
             </div>
             
-            {/* Sign out / Switch owner workspace button */}
-            <button
-              onClick={() => {
-                localStorage.removeItem("spaceone_current_owner");
-                setCurrentUser(null);
-                setIsMenuOpen(false);
-              }}
-              className="w-full text-center py-2 rounded-lg border border-slate-200 hover:border-red-250 bg-white hover:bg-rose-50 text-[10px] font-bold text-slate-500 hover:text-red-650 transition-all font-sans cursor-pointer flex items-center justify-center gap-1.5 uppercase tracking-wider"
-              title="Se déconnecter"
-            >
-              <LogOut className="w-3.5 h-3.5 text-slate-400 group-hover:text-red-550" />
-              <span>Changer d'Espace</span>
-            </button>
+            <div className="grid grid-cols-2 gap-2">
+              {/* Profile settings button */}
+              <button
+                onClick={() => {
+                  setIsProfileOpen(true);
+                  setIsMenuOpen(false);
+                }}
+                className="text-center py-2 rounded-lg border border-slate-200 hover:border-blue-250 bg-white hover:bg-slate-100 text-[10px] font-bold text-slate-600 hover:text-blue-600 transition-all font-sans cursor-pointer flex items-center justify-center gap-1.5 uppercase tracking-wider"
+                title="Gérer mon profil"
+              >
+                <User className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-550" />
+                <span>Mon Profil</span>
+              </button>
+
+              {/* Sign out / Switch owner workspace button */}
+              <button
+                onClick={() => {
+                  localStorage.removeItem("spaceone_current_owner");
+                  setCurrentUser(null);
+                  setIsMenuOpen(false);
+                }}
+                className="text-center py-2 rounded-lg border border-slate-200 hover:border-red-250 bg-white hover:bg-rose-50 text-[10px] font-bold text-slate-500 hover:text-red-650 transition-all font-sans cursor-pointer flex items-center justify-center gap-1.5 uppercase tracking-wider"
+                title="Se déconnecter"
+              >
+                <LogOut className="w-3.5 h-3.5 text-slate-450 group-hover:text-red-550" />
+                <span>Quitter</span>
+              </button>
+            </div>
           </div>
         )}
 
@@ -1152,19 +1268,53 @@ export default function App() {
                   <p className="text-slate-400 text-xs md:text-sm font-sans mt-2 max-w-xl">
                     Tableau de bord de gestion et conciergerie unifiée pour votre parc de logements de prestige. Suivi en temps réel des séjours, rotations de ménage et assistants IA de messagerie.
                   </p>
+                  
+                  {/* Share Space direct link */}
+                  <div className="mt-4 flex flex-wrap gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const clientUrl = `${window.location.origin}/?space=${currentUser?.id}`;
+                        navigator.clipboard.writeText(clientUrl);
+                        setCopiedLink(true);
+                        setTimeout(() => setCopiedLink(false), 3000);
+                      }}
+                      className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-sans font-bold text-[10px] uppercase tracking-wider px-4 py-2 rounded-xl transition-all cursor-pointer shadow-md border border-blue-500 active:scale-97"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>{copiedLink ? "Lien copié ! ✓" : "Partager l'Espace aux Clients 🔗"}</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* Profile card widget inside banner */}
-                <div className="bg-white/5 border border-white/10 backdrop-blur-md rounded-xl p-4 flex items-center gap-3.5 md:min-w-[240px] shrink-0">
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-600 text-white font-extrabold flex items-center justify-center text-sm shadow-md border border-white/20">
-                    {currentUser?.fullName ? currentUser.fullName.split(" ").map(w => w[0]).join("").toUpperCase().substring(0, 2) : "H"}
-                  </div>
-                  <div className="text-left">
-                    <div className="text-xs text-slate-400 font-medium uppercase tracking-wider font-sans">Compte Hébergeur</div>
+                <button
+                  type="button"
+                  onClick={() => setIsProfileOpen(true)}
+                  className="bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 backdrop-blur-md rounded-xl p-4 flex items-center gap-3.5 md:min-w-[240px] shrink-0 text-left cursor-pointer transition-all duration-200 group active:scale-98"
+                  title="Modifier mon profil"
+                >
+                  {currentUser?.avatarUrl ? (
+                    <img
+                      src={currentUser.avatarUrl}
+                      alt={currentUser.fullName}
+                      className="w-12 h-12 rounded-full object-cover shadow-sm border border-white/20 shrink-0"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-600 text-white font-extrabold flex items-center justify-center text-sm shadow-md border border-white/20 shrink-0">
+                      {currentUser?.fullName ? currentUser.fullName.split(" ").map(w => w[0]).join("").toUpperCase().substring(0, 2) : "H"}
+                    </div>
+                  )}
+                  <div className="text-left flex-grow min-w-0">
+                    <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider font-sans flex items-center gap-1">
+                      <span>Compte Hébergeur</span>
+                      <span className="text-blue-400 font-extrabold group-hover:translate-x-0.5 transition-transform">⚙</span>
+                    </div>
                     <div className="text-sm font-bold text-white truncate font-sans">{currentUser?.fullName}</div>
-                    <div className="text-[10px] text-blue-300 font-mono mt-0.5">{currentUser?.email}</div>
+                    <div className="text-[10px] text-blue-350 font-mono mt-0.5 truncate">{currentUser?.email}</div>
                   </div>
-                </div>
+                </button>
               </div>
             </div>
 
@@ -1296,6 +1446,15 @@ export default function App() {
           />
         )}
       </main>
+
+      {currentUser && (
+        <ProfileModal
+          isOpen={isProfileOpen}
+          onClose={() => setIsProfileOpen(false)}
+          currentUser={currentUser}
+          onProfileUpdated={(updatedUser) => setCurrentUser(updatedUser)}
+        />
+      )}
     </div>
   );
 }
