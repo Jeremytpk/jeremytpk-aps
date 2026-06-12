@@ -1,0 +1,163 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Catch-all default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(ownerId) {
+      return isSignedIn() && request.auth.uid == ownerId;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().role == 'admin';
+    }
+
+    function isNotSuspended() {
+      return isSignedIn() && (
+        !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+        getUserData().suspended == false
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // --- Users Collection ---
+    match /users/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow list: if isAdmin();
+      
+      allow create: if isSignedIn() 
+        && request.auth.uid == userId 
+        && request.resource.data.id == userId
+        && (
+          request.resource.data.role == 'espace' || (
+            request.resource.data.role == 'admin' && (
+              (request.auth.token.email != null && (request.auth.token.email.lower() == 'admin@spaceone.com' || request.auth.token.email.lower() == 'jeremytopaka@gmail.com')) ||
+              (request.resource.data.email is string && (request.resource.data.email.lower() == 'admin@spaceone.com' || request.resource.data.email.lower() == 'jeremytopaka@gmail.com'))
+            )
+          )
+        )
+        && request.resource.data.suspended == false
+        && request.resource.data.fullName is string
+        && request.resource.data.fullName.size() <= 200
+        && request.resource.data.businessName is string
+        && request.resource.data.businessName.size() <= 200;
+
+      allow update: if isSignedIn() && (
+        isAdmin() || (
+          request.auth.uid == userId
+          && isNotSuspended()
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.suspended == resource.data.suspended
+          && request.resource.data.id == resource.data.id
+          && request.resource.data.email == resource.data.email
+          && request.resource.data.fullName is string
+          && request.resource.data.fullName.size() <= 200
+          && request.resource.data.businessName is string
+          && request.resource.data.businessName.size() <= 200
+        )
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    // --- Apartments Collection ---
+    match /apartments/{apartmentId} {
+      allow get: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      
+      allow create: if isSignedIn() && isNotSuspended()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 200;
+
+      allow update: if isSignedIn() && (
+        isAdmin() || (
+          isNotSuspended()
+          && resource.data.ownerId == request.auth.uid
+          && request.resource.data.ownerId == request.auth.uid
+          && request.resource.data.name is string
+          && request.resource.data.name.size() <= 200
+        )
+      );
+
+      allow delete: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+    }
+
+    // --- Bookings Collection ---
+    match /bookings/{bookingId} {
+      allow get: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      
+      allow create: if isSignedIn() && isNotSuspended()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.guestName is string
+        && request.resource.data.guestName.size() <= 200;
+
+      allow update: if isSignedIn() && (
+        isAdmin() || (
+          isNotSuspended()
+          && resource.data.ownerId == request.auth.uid
+          && request.resource.data.ownerId == request.auth.uid
+          && request.resource.data.guestName is string
+          && request.resource.data.guestName.size() <= 200
+        )
+      );
+
+      allow delete: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+    }
+
+    // --- CleaningTasks Collection ---
+    match /cleaningTasks/{cleaningTaskId} {
+      allow get: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      
+      allow create: if isSignedIn() && isNotSuspended()
+        && request.resource.data.ownerId == request.auth.uid;
+
+      allow update: if isSignedIn() && (
+        isAdmin() || (
+          isNotSuspended()
+          && resource.data.ownerId == request.auth.uid
+          && request.resource.data.ownerId == request.auth.uid
+        )
+      );
+
+      allow delete: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+    }
+
+    // --- Threads Collection ---
+    match /threads/{threadId} {
+      allow get: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      
+      allow create: if isSignedIn() && isNotSuspended()
+        && request.resource.data.ownerId == request.auth.uid;
+
+      allow update: if isSignedIn() && (
+        isAdmin() || (
+          isNotSuspended()
+          && resource.data.ownerId == request.auth.uid
+          && request.resource.data.ownerId == request.auth.uid
+        )
+      );
+
+      allow delete: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+    }
+
+  }
+}

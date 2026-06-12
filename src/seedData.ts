@@ -9,7 +9,13 @@ export const initialApartments: Apartment[] = [
     beds: 3,
     maxGuests: 4,
     status: "occupied", // active booking today
-    thumbnail: "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=800&q=80"
+    thumbnail: "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=800&q=80",
+    images: [
+      "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1493809842364-78817add7ffb?auto=format&fit=crop&w=800&q=80"
+    ],
+    details: "Un chef-d'œuvre de design contemporain niché au cœur du Marais. Offre une vue spectaculaire sur l'architecture parisienne classique, climatisation intégrée, cuisine tout équipée de marque haut de gamme et service de conciergerie disponible 24/7."
   },
   {
     id: "apt-2",
@@ -19,7 +25,14 @@ export const initialApartments: Apartment[] = [
     beds: 1,
     maxGuests: 2,
     status: "scheduled", // upcoming booking next week
-    thumbnail: "https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=800&q=80"
+    thumbnail: "https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=800&q=80",
+    images: [
+      "https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1493809842364-78817add7ffb?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&w=800&q=80"
+    ],
+    details: "Superbe duplex lumineux surplombant directement la mer Méditerranée. Équipé d'une spacieuse terrasse privée parfaite pour les fins de journées ensoleillées, de finitions raffinées en marbre et d'un accès privé direct à la plage."
   },
   {
     id: "apt-3",
@@ -29,7 +42,14 @@ export const initialApartments: Apartment[] = [
     beds: 5,
     maxGuests: 8,
     status: "free", // recently checked out, currently free
-    thumbnail: "https://images.unsplash.com/photo-1518780664697-55e3ad937233?auto=format&fit=crop&w=800&q=80"
+    thumbnail: "https://images.unsplash.com/photo-1518780664697-55e3ad937233?auto=format&fit=crop&w=800&q=80",
+    images: [
+      "https://images.unsplash.com/photo-1518780664697-55e3ad937233?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=800&q=80"
+    ],
+    details: "Chalet d'exception entièrement en bois brut doté de tout le confort alpin moderne. Comprend une grande cheminée centrale suspendue en acier pour les soirées rudes, un espace bien-être privatif avec hammam, et une vue panoramique époustouflante sur le Mont Blanc."
   }
 ];
 

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Apartment, Booking } from "../types";
 import { Calendar, ChevronLeft, ChevronRight, Info, Check, AlertTriangle, Moon, Clock, HelpCircle } from "lucide-react";
+import { formatDateToFR } from "../utils";
 
 interface CalendarTabProps {
   apartments: Apartment[];
@@ -161,7 +162,7 @@ export default function CalendarTab({ apartments, bookings }: CalendarTabProps) 
                       {status === "occupied" && booking ? (
                         <div
                           className="w-full h-full min-h-[50px] rounded-lg bg-rose-500 border border-rose-600 flex flex-col items-center justify-center text-white cursor-pointer hover:brightness-105 transition-all shadow-xs"
-                          title={`Voyageur : ${booking.guestName}\nSéjour : Du ${booking.checkIn} au ${booking.checkOut}`}
+                          title={`Voyageur : ${booking.guestName}\nSéjour : Du ${formatDateToFR(booking.checkIn)} au ${formatDateToFR(booking.checkOut)}`}
                         >
                           <Moon className="w-3.5 h-3.5 animate-pulse" />
                           <span className="text-[9px] font-bold mt-1 max-w-full truncate px-1 font-sans">
@@ -171,7 +172,7 @@ export default function CalendarTab({ apartments, bookings }: CalendarTabProps) 
                       ) : status === "scheduled" && booking ? (
                         <div
                           className="w-full h-full min-h-[50px] rounded-lg bg-amber-400 border border-amber-500 flex flex-col items-center justify-center text-slate-900 cursor-pointer hover:brightness-105 transition-all shadow-xs"
-                          title={`Voyageur : ${booking.guestName}\nSéjour : Du ${booking.checkIn} au ${booking.checkOut}`}
+                          title={`Voyageur : ${booking.guestName}\nSéjour : Du ${formatDateToFR(booking.checkIn)} au ${formatDateToFR(booking.checkOut)}`}
                         >
                           <Clock className="w-3.5 h-3.5" />
                           <span className="text-[9px] font-bold mt-1 max-w-full truncate px-1 font-sans">
@@ -195,7 +196,7 @@ export default function CalendarTab({ apartments, bookings }: CalendarTabProps) 
                           </div>
                           <div>
                             <span className="text-slate-400 block text-[10px] uppercase font-mono">Période du séjour :</span>
-                            <span className="font-semibold">Du {booking.checkIn} au {booking.checkOut}</span>
+                            <span className="font-semibold">Du {formatDateToFR(booking.checkIn)} au {formatDateToFR(booking.checkOut)}</span>
                           </div>
                           <div>
                             <span className="text-slate-400 block text-[10px] uppercase font-mono">Total Séjour :</span>

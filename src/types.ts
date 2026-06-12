@@ -1,5 +1,6 @@
 export interface Apartment {
   id: string;
+  ownerId?: string; // Links to the HomeOwner id in Firestore
   name: string;
   address: string;
   rooms: number;
@@ -7,11 +8,14 @@ export interface Apartment {
   maxGuests: number;
   status: "occupied" | "free" | "scheduled";
   thumbnail: string;
+  images?: string[]; // Array of 3 to 10 layout/apartment images
+  details?: string;  // More details about the apartment shown below the address
 }
 
 export interface Booking {
   id: string;
   apartmentId: string;
+  ownerId?: string; // Links to the HomeOwner id in Firestore
   guestName: string;
   guestEmail: string;
   guestPhone: string;
@@ -27,6 +31,7 @@ export interface CleaningTask {
   id: string;
   apartmentId: string;
   bookingId: string;
+  ownerId?: string; // Links to the HomeOwner id in Firestore
   date: string; // YYYY-MM-DD (typically check-out date of a booking)
   status: "pending" | "in_progress" | "completed";
   cleanerName: string;
@@ -44,8 +49,20 @@ export interface Message {
 export interface MessageThread {
   id: string;
   bookingId: string;
+  ownerId?: string; // Links to the HomeOwner id in Firestore
   guestName: string;
   apartmentName: string;
   lastUpdated: string;
   messages: Message[];
+}
+
+export interface HomeOwner {
+  id: string;
+  email: string;
+  fullName: string;
+  businessName: string;
+  avatarUrl?: string;
+  createdAt: string;
+  role: "espace" | "admin";
+  suspended?: boolean;
 }

@@ -1,0 +1,104 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Owner user account details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "fullName": { "type": "string" },
+        "email": { "type": "string" },
+        "businessName": { "type": "string" },
+        "role": { "type": "string", "enum": ["espace", "admin"] },
+        "suspended": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "fullName", "email", "businessName", "role", "suspended", "createdAt"]
+    },
+    "Apartment": {
+      "title": "Apartment",
+      "description": "An apartment managed by a homeowner",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "name": { "type": "string" },
+        "address": { "type": "string" },
+        "status": { "type": "string" },
+        "price": { "type": "number" },
+        "imageUrl": { "type": "string" },
+        "rating": { "type": "number" },
+        "reviews": { "type": "integer" }
+      },
+      "required": ["id", "ownerId", "name", "address", "status", "price"]
+    },
+    "Booking": {
+      "title": "Booking",
+      "description": "A travel booking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "apartmentId": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "guestName": { "type": "string" },
+        "checkIn": { "type": "string" },
+        "checkOut": { "type": "string" },
+        "status": { "type": "string" },
+        "totalAmount": { "type": "number" }
+      },
+      "required": ["id", "apartmentId", "ownerId", "guestName", "checkIn", "checkOut", "status", "totalAmount"]
+    },
+    "CleaningTask": {
+      "title": "CleaningTask",
+      "description": "Ménage rotation task",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "apartmentId": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "date": { "type": "string" },
+        "status": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "required": ["id", "apartmentId", "ownerId", "date", "status"]
+    },
+    "CommunicationThread": {
+      "title": "CommunicationThread",
+      "description": "Communication chat thread",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "apartmentId": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "guestName": { "type": "string" },
+        "lastUpdated": { "type": "string" },
+        "messages": {
+          "type": "array"
+        }
+      },
+      "required": ["id", "apartmentId", "ownerId", "guestName", "lastUpdated", "messages"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User account documents mapped by auth ID"
+    },
+    "/apartments/{apartmentId}": {
+      "schema": "Apartment",
+      "description": "Apartments collection"
+    },
+    "/bookings/{bookingId}": {
+      "schema": "Booking",
+      "description": "Bookings collection"
+    },
+    "/cleaningTasks/{cleaningTaskId}": {
+      "schema": "CleaningTask",
+      "description": "Cleaning tasks collection"
+    },
+    "/threads/{threadId}": {
+      "schema": "CommunicationThread",
+      "description": "Threads collection"
+    }
+  }
+}

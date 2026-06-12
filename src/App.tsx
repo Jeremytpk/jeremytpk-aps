@@ -1,11 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Apartment, Booking, CleaningTask, MessageThread } from "./types";
-import {
-  initialApartments,
-  initialBookings,
-  initialCleaningTasks,
-  initialMessageThreads,
-} from "./seedData";
+import { Apartment, Booking, CleaningTask, MessageThread, HomeOwner } from "./types";
 
 // Components
 import ApartmentsTab from "./components/ApartmentsTab";
@@ -13,6 +7,28 @@ import BookingsTab from "./components/BookingsTab";
 import CleaningTab from "./components/CleaningTab";
 import CalendarTab from "./components/CalendarTab";
 import CommunicationTab from "./components/CommunicationTab";
+
+// Firebase
+import { db, auth, handleFirestoreError, OperationType } from "./firebase";
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+} from "firebase/auth";
+import {
+  collection,
+  doc,
+  setDoc,
+  getDoc,
+  getDocs,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  onSnapshot,
+  query,
+  where,
+} from "firebase/firestore";
 
 // Icons
 import {
@@ -29,43 +45,109 @@ import {
   AlertTriangle,
   Menu,
   X,
+  LogOut,
+  User,
+  Mail,
+  Lock,
+  Compass,
+  Users,
+  ShieldAlert,
+  Edit,
+  Check,
+  Power,
+  RefreshCw,
+  Eye,
+  Trash2,
 } from "lucide-react";
 
 export default function App() {
+  // Auth and tenant states
+  const [currentUser, setCurrentUser] = useState<HomeOwner | null>(null);
+  const isRegisteringRef = React.useRef(false);
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [regFullName, setRegFullName] = useState("");
+  const [regBusinessName, setRegBusinessName] = useState("");
+  const [regEmail, setRegEmail] = useState("");
+  const [regPassword, setRegPassword] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [isLoadingSpace, setIsLoadingSpace] = useState(false);
+
   // State lists
   const [apartments, setApartments] = useState<Apartment[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [cleaningTasks, setCleaningTasks] = useState<CleaningTask[]>([]);
   const [threads, setThreads] = useState<MessageThread[]>([]);
+  const [allUsers, setAllUsers] = useState<HomeOwner[]>([]); // For admin use
 
   // View control
-  const [activeTab, setActiveTab] = useState<"overview" | "apartments" | "bookings" | "cleaning" | "chat">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "apartments" | "bookings" | "cleaning" | "chat" | "admin">("overview");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  // Admin Workspace state
+  const [adminSubTab, setAdminSubTab] = useState<"users" | "apartments" | "bookings">("users");
+  const [editingUser, setEditingUser] = useState<HomeOwner | null>(null);
+  const [editFullName, setEditFullName] = useState("");
+  const [editBusinessName, setEditBusinessName] = useState("");
+  const [editRole, setEditRole] = useState<"espace" | "admin">("espace");
 
   // Gemini configuration notification state
   const [aiConfigured, setAiConfigured] = useState<boolean>(true);
 
-  // Load initial Seed data on mount
+  // Auth observer subscription
   useEffect(() => {
-    // Look in custom standard localStorage so edits are persisted across preview refreshes
-    const savedApt = localStorage.getItem("airbnb_pms_apartments");
-    const savedBookings = localStorage.getItem("airbnb_pms_bookings");
-    const savedClean = localStorage.getItem("airbnb_pms_cleaning");
-    const savedThreads = localStorage.getItem("airbnb_pms_threads");
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        if (isRegisteringRef.current) {
+          // Skip general load - registering handler manages state setup
+          return;
+        }
+        setIsLoadingSpace(true);
+        try {
+          const userDocSnap = await getDoc(doc(db, "users", firebaseUser.uid));
+          if (userDocSnap.exists()) {
+            const userData = userDocSnap.data() as HomeOwner;
+            if (userData.suspended) {
+              setAuthError("Votre compte d'hébergeur a été suspendu par l'administration.");
+              await signOut(auth);
+              setCurrentUser(null);
+            } else {
+              setCurrentUser(userData);
+              setAuthError("");
+            }
+          } else {
+            // Self-healing database insert to address request #3
+            const isSystemAdmin = (firebaseUser.email?.toLowerCase() === "admin@spaceone.com" || firebaseUser.email?.toLowerCase() === "jeremytopaka@gmail.com");
+            const healedUser: HomeOwner = {
+              id: firebaseUser.uid,
+              email: firebaseUser.email || "",
+              fullName: firebaseUser.displayName || "Membre SpaceOne",
+              businessName: "Espace Conciergerie",
+              createdAt: new Date().toISOString(),
+              role: isSystemAdmin ? "admin" : "espace",
+              suspended: false,
+            };
+            try {
+              await setDoc(doc(db, "users", firebaseUser.uid), healedUser);
+            } catch (writeErr) {
+              console.warn("Could not auto-heal user doc in Firestore:", writeErr);
+            }
+            setCurrentUser(healedUser);
+            setAuthError("");
+          }
+        } catch (e) {
+          console.error("Error reading authenticated user info from Firestore", e);
+          setAuthError("Impossible de synchroniser votre compte depuis la base Firestore.");
+        } finally {
+          setIsLoadingSpace(false);
+        }
+      } else {
+        setCurrentUser(null);
+      }
+    });
 
-    if (savedApt) setApartments(JSON.parse(savedApt));
-    else setApartments(initialApartments);
-
-    if (savedBookings) setBookings(JSON.parse(savedBookings));
-    else setBookings(initialBookings);
-
-    if (savedClean) setCleaningTasks(JSON.parse(savedClean));
-    else setCleaningTasks(initialCleaningTasks);
-
-    if (savedThreads) setThreads(JSON.parse(savedThreads));
-    else setThreads(initialMessageThreads);
-
-    // Verify if backend server reports proper Gemini configuration
+    // Check Gemini API support
     fetch("/api/ai-status")
       .then((res) => res.json())
       .then((data) => {
@@ -76,191 +158,699 @@ export default function App() {
       .catch((err) => {
         console.warn("Could not query server API key status, defaulting true:", err);
       });
+
+    return () => unsubscribeAuth();
   }, []);
 
-  // Sync state to standard localStorage
-  const saveAll = (
-    newApts: Apartment[],
-    newBookings: Booking[],
-    newClean: CleaningTask[],
-    newThreads: MessageThread[]
-  ) => {
-    localStorage.setItem("airbnb_pms_apartments", JSON.stringify(newApts));
-    localStorage.setItem("airbnb_pms_bookings", JSON.stringify(newBookings));
-    localStorage.setItem("airbnb_pms_cleaning", JSON.stringify(newClean));
-    localStorage.setItem("airbnb_pms_threads", JSON.stringify(newThreads));
-  };
+  // Real-time Firestore sync based on authenticated user and roles
+  useEffect(() => {
+    if (!currentUser) {
+      setApartments([]);
+      setBookings([]);
+      setCleaningTasks([]);
+      setThreads([]);
+      setAllUsers([]);
+      return;
+    }
 
-  // Apartment Handlers
-  const handleAddApartment = (apt: Apartment) => {
-    const updated = [...apartments, apt];
-    setApartments(updated);
-    saveAll(updated, bookings, cleaningTasks, threads);
-  };
+    const uid = currentUser.id;
+    const isUserAdmin = currentUser.role === "admin";
 
-  const handleUpdateApartment = (apt: Apartment) => {
-    const updated = apartments.map((a) => (a.id === apt.id ? apt : a));
-    setApartments(updated);
-    saveAll(updated, bookings, cleaningTasks, threads);
-  };
+    // 1. Listen to Apartments
+    const apartmentsQuery = isUserAdmin
+      ? collection(db, "apartments")
+      : query(collection(db, "apartments"), where("ownerId", "==", uid));
 
-  const handleDeleteApartment = (id: string) => {
-    const updatedApts = apartments.filter((a) => a.id !== id);
-    const updatedBookings = bookings.filter((b) => b.apartmentId !== id);
-    const updatedClean = cleaningTasks.filter((c) => c.apartmentId !== id);
-
-    setApartments(updatedApts);
-    setBookings(updatedBookings);
-    setCleaningTasks(updatedClean);
-    saveAll(updatedApts, updatedBookings, updatedClean, threads);
-  };
-
-  // Booking Handlers
-  const handleAddBooking = (booking: Booking) => {
-    const updatedBookings = [...bookings, booking];
-
-    // Auto-update high-level apartment status to "occupied" if stay is currently active, or "scheduled"
-    const updatedApts = apartments.map((apt) => {
-      if (apt.id === booking.apartmentId) {
-        return {
-          ...apt,
-          status: booking.status === "active" ? ("occupied" as const) : ("scheduled" as const),
-        };
-      }
-      return apt;
+    const unsubscribeApts = onSnapshot(apartmentsQuery, (snapshot) => {
+      const list: Apartment[] = [];
+      snapshot.forEach((doc) => {
+        list.push({ id: doc.id, ...doc.data() } as Apartment);
+      });
+      setApartments(list);
+    }, (error) => {
+      console.error("Firestore onSnapshot failure (apartments)", error);
     });
 
-    // Auto-génération d'un fil de discussion
-    const newThread: MessageThread = {
-      id: "thread-" + Date.now(),
-      bookingId: booking.id,
-      guestName: booking.guestName,
-      apartmentName: apartments.find((a) => a.id === booking.apartmentId)?.name || "Logement",
-      lastUpdated: new Date().toISOString(),
-      messages: [
-        {
-          id: `msg-${Date.now()}-welcome`,
-          sender: "host",
-          text: `Bonjour ${booking.guestName} ! Nous sommes ravis de vous confirmer votre séjour du ${booking.checkIn} au ${booking.checkOut} chez SpaceOne. N'hésitez pas si vous avez des questions !`,
-          timestamp: new Date().toISOString(),
-        },
-      ],
-    };
-    const updatedThreads = [...threads, newThread];
+    // 2. Listen to Bookings
+    const bookingsQuery = isUserAdmin
+      ? collection(db, "bookings")
+      : query(collection(db, "bookings"), where("ownerId", "==", uid));
 
-    // Auto-génération d'une tâche de ménage pour la date de départ
-    const newClean: CleaningTask = {
-      id: "clean-" + Date.now(),
-      apartmentId: booking.apartmentId,
-      bookingId: booking.id,
-      date: booking.checkOut,
-      status: "pending",
-      cleanerName: "Amélie Dubois",
-      notes: `Nettoyage de départ standard planifié automatiquement suite au départ de ${booking.guestName}.`,
-      checklist: [
-        { id: `c-${Date.now()}-1`, text: "Changer les draps et laver les serviettes", done: false },
-        { id: `c-${Date.now()}-2`, text: "Désinfecter la cuisine, nettoyer micro-ondes & frigo", done: false },
-        { id: `c-${Date.now()}-3`, text: "Passer l'aspirateur et balayer tous les sols", done: false },
-        { id: `c-${Date.now()}-4`, text: "Recharger l'essentiel : produits de toilette, café & thé", done: false },
-        { id: `c-${Date.now()}-5`, text: "Désinfecter et briquer la salle de bains", done: false },
-      ],
-    };
-    const updatedCleanTasks = [...cleaningTasks, newClean];
-
-    setApartments(updatedApts);
-    setBookings(updatedBookings);
-    setCleaningTasks(updatedCleanTasks);
-    setThreads(updatedThreads);
-
-    saveAll(updatedApts, updatedBookings, updatedCleanTasks, updatedThreads);
-  };
-
-  const handleUpdateBooking = (booking: Booking) => {
-    const updatedBookings = bookings.map((b) => (b.id === booking.id ? booking : b));
-
-    // Update associated apartments status if required
-    const updatedApts = apartments.map((apt) => {
-      if (apt.id === booking.apartmentId) {
-        return {
-          ...apt,
-          status:
-            booking.status === "active"
-              ? ("occupied" as const)
-              : booking.status === "upcoming"
-              ? ("scheduled" as const)
-              : ("free" as const),
-        };
-      }
-      return apt;
+    const unsubscribeBookings = onSnapshot(bookingsQuery, (snapshot) => {
+      const list: Booking[] = [];
+      snapshot.forEach((doc) => {
+        list.push({ id: doc.id, ...doc.data() } as Booking);
+      });
+      setBookings(list);
+    }, (error) => {
+      console.error("Firestore onSnapshot failure (bookings)", error);
     });
 
-    setBookings(updatedBookings);
-    setApartments(updatedApts);
-    saveAll(updatedApts, updatedBookings, cleaningTasks, threads);
-  };
+    // 3. Listen to CleaningTasks
+    const cleaningQuery = isUserAdmin
+      ? collection(db, "cleaningTasks")
+      : query(collection(db, "cleaningTasks"), where("ownerId", "==", uid));
 
-  const handleDeleteBooking = (id: string) => {
-    const updatedBookings = bookings.filter((b) => b.id !== id);
-    setBookings(updatedBookings);
-    saveAll(apartments, updatedBookings, cleaningTasks, threads);
-  };
+    const unsubscribeCleaning = onSnapshot(cleaningQuery, (snapshot) => {
+      const list: CleaningTask[] = [];
+      snapshot.forEach((doc) => {
+        list.push({ id: doc.id, ...doc.data() } as CleaningTask);
+      });
+      setCleaningTasks(list);
+    }, (error) => {
+      console.error("Firestore onSnapshot failure (cleaning)", error);
+    });
 
-  // Cleaning Handlers
-  const handleAddCleaningTask = (task: CleaningTask) => {
-    const updated = [...cleaningTasks, task];
-    setCleaningTasks(updated);
-    saveAll(apartments, bookings, updated, threads);
-  };
+    // 4. Listen to Threads
+    const threadsQuery = isUserAdmin
+      ? collection(db, "threads")
+      : query(collection(db, "threads"), where("ownerId", "==", uid));
 
-  const handleUpdateCleaningTask = (task: CleaningTask) => {
-    const updated = cleaningTasks.map((c) => (c.id === task.id ? task : c));
+    const unsubscribeThreads = onSnapshot(threadsQuery, (snapshot) => {
+      const list: MessageThread[] = [];
+      snapshot.forEach((doc) => {
+        list.push({ id: doc.id, ...doc.data() } as MessageThread);
+      });
+      setThreads(list);
+    }, (error) => {
+      console.error("Firestore onSnapshot failure (threads)", error);
+    });
 
-    // If a cleaning task transitions to completed, update corresponding apartment status to "free"
-    let updatedApts = apartments;
-    if (task.status === "completed") {
-      updatedApts = apartments.map((apt) => {
-        if (apt.id === task.apartmentId && apt.status !== "occupied") {
-          return { ...apt, status: "free" as const };
-        }
-        return apt;
+    // 5. Admin extra listener - all users
+    let unsubscribeUsers = () => {};
+    if (isUserAdmin) {
+      const usersQuery = collection(db, "users");
+      unsubscribeUsers = onSnapshot(usersQuery, (snapshot) => {
+        const list: HomeOwner[] = [];
+        snapshot.forEach((doc) => {
+          list.push({ id: doc.id, ...doc.data() } as HomeOwner);
+        });
+        setAllUsers(list);
+      }, (error) => {
+        console.error("Firestore onSnapshot failure (users)", error);
       });
     }
 
-    setCleaningTasks(updated);
-    setApartments(updatedApts);
-    saveAll(updatedApts, bookings, updated, threads);
-  };
+    return () => {
+      unsubscribeApts();
+      unsubscribeBookings();
+      unsubscribeCleaning();
+      unsubscribeThreads();
+      unsubscribeUsers();
+    };
+  }, [currentUser]);
 
-  const handleDeleteCleaningTask = (id: string) => {
-    const updated = cleaningTasks.filter((c) => c.id !== id);
-    setCleaningTasks(updated);
-    saveAll(apartments, bookings, updated, threads);
-  };
+  // Auth Action Handlers
+  const handleLoginSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!loginEmail || !loginPassword) {
+      setAuthError("Veuillez remplir tous les champs.");
+      return;
+    }
+    setAuthError("");
+    setIsLoadingSpace(true);
 
-  // Messaging Thread Handlers
-  const handleAddMessage = (threadId: string, text: string, sender: "host" | "guest") => {
-    const updatedThreads = threads.map((th) => {
-      if (th.id === threadId) {
-        return {
-          ...th,
-          lastUpdated: new Date().toISOString(),
-          messages: [
-            ...th.messages,
-            {
-              id: "msg-" + Date.now(),
-              sender,
-              text,
-              timestamp: new Date().toISOString(),
-            },
-          ],
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
+      const userSnap = await getDoc(doc(db, "users", userCredential.user.uid));
+      if (userSnap.exists()) {
+        const userData = userSnap.data() as HomeOwner;
+        if (userData.suspended) {
+          setAuthError("Votre compte d'hébergeur a été suspendu par l'administration.");
+          await signOut(auth);
+          setCurrentUser(null);
+        } else {
+          setCurrentUser(userData);
+          setAuthError("");
+        }
+      } else {
+        const isSystemAdmin = (loginEmail.toLowerCase() === "admin@spaceone.com" || loginEmail.toLowerCase() === "jeremytopaka@gmail.com");
+        const fallbackUser: HomeOwner = {
+          id: userCredential.user.uid,
+          email: loginEmail,
+          fullName: userCredential.user.displayName || "Utilisateur SpaceOne",
+          businessName: "Espace Conciergerie",
+          createdAt: new Date().toISOString(),
+          role: isSystemAdmin ? "admin" : "espace",
+          suspended: false,
         };
+        await setDoc(doc(db, "users", userCredential.user.uid), fallbackUser);
+        setCurrentUser(fallbackUser);
       }
-      return th;
-    });
-
-    setThreads(updatedThreads);
-    saveAll(apartments, bookings, cleaningTasks, updatedThreads);
+    } catch (error: any) {
+      console.error("Login call failed", error);
+      if (
+        error.code === "auth/user-not-found" ||
+        error.code === "auth/wrong-password" ||
+        error.code === "auth/invalid-credential"
+      ) {
+        setAuthError("Identifiants de sécurité invalides. Veuillez réessayer.");
+      } else {
+        setAuthError(`Erreur d'authentification : ${error.message || error}`);
+      }
+    } finally {
+      setIsLoadingSpace(false);
+    }
   };
+
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!regFullName || !regBusinessName || !regEmail || !regPassword) {
+      setAuthError("Veuillez remplir tous les champs.");
+      return;
+    }
+    setAuthError("");
+    setIsLoadingSpace(true);
+    isRegisteringRef.current = true; // Block auth state observer race conditions
+
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, regEmail, regPassword);
+      const userId = userCredential.user.uid;
+
+      const emailLower = regEmail.toLowerCase();
+      // Ensure specific target emails receive the required Admin status dynamically
+      const isSystemAdmin = emailLower === "admin@spaceone.com" || emailLower === "jeremytopaka@gmail.com";
+      const role = isSystemAdmin ? "admin" : "espace";
+
+      const newOwner: HomeOwner = {
+        id: userId,
+        fullName: regFullName,
+        businessName: regBusinessName,
+        email: regEmail,
+        createdAt: new Date().toISOString(),
+        role: role,
+        suspended: false,
+      };
+
+      // Create main metadata in Firebase
+      await setDoc(doc(db, "users", userId), newOwner);
+      setCurrentUser(newOwner);
+
+      setRegFullName("");
+      setRegBusinessName("");
+      setRegEmail("");
+      setRegPassword("");
+      setAuthError("");
+    } catch (error: any) {
+      console.error("Registration call failed", error);
+      if (error.code === "auth/email-already-in-use") {
+        setAuthError("Cet e-mail est déjà utilisé par un autre hébergeur.");
+      } else if (error.code === "auth/weak-password") {
+        setAuthError("Votre mot de passe doit contenir au moins 6 caractères.");
+      } else {
+        setAuthError(`Erreur lors de l'inscription : ${error.message || error}`);
+      }
+    } finally {
+      isRegisteringRef.current = false; // Reset block
+      setIsLoadingSpace(false);
+    }
+  };
+
+  // Firestore Entity Mutation Actions
+  const handleAddApartment = async (apt: Apartment) => {
+    if (!currentUser) return;
+    try {
+      await addDoc(collection(db, "apartments"), {
+        name: apt.name,
+        address: apt.address,
+        rooms: Number(apt.rooms),
+        beds: Number(apt.beds),
+        maxGuests: Number(apt.maxGuests),
+        status: apt.status || "free",
+        thumbnail: apt.thumbnail || "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=800&q=80",
+        ownerId: currentUser.id,
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, "apartments");
+    }
+  };
+
+  const handleUpdateApartment = async (apt: Apartment) => {
+    if (!currentUser) return;
+    try {
+      const docRef = doc(db, "apartments", apt.id);
+      await setDoc(docRef, {
+        ...apt,
+        ownerId: apt.ownerId || currentUser.id,
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `apartments/${apt.id}`);
+    }
+  };
+
+  const handleDeleteApartment = async (id: string) => {
+    if (!currentUser) return;
+    try {
+      await deleteDoc(doc(db, "apartments", id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `apartments/${id}`);
+    }
+  };
+
+  // Booking Handlers
+  const handleAddBooking = async (booking: Booking) => {
+    if (!currentUser) return;
+    try {
+      const bookingData = {
+        apartmentId: booking.apartmentId,
+        guestName: booking.guestName,
+        guestEmail: booking.guestEmail,
+        guestPhone: booking.guestPhone,
+        checkIn: booking.checkIn,
+        checkOut: booking.checkOut,
+        guestsCount: Number(booking.guestsCount),
+        totalAmount: Number(booking.totalAmount),
+        status: booking.status,
+        notes: booking.notes || "",
+        ownerId: currentUser.id,
+      };
+
+      const bookingRef = await addDoc(collection(db, "bookings"), bookingData);
+
+      // Auto update apartment status to occupied or scheduled
+      const aptRef = doc(db, "apartments", booking.apartmentId);
+      await updateDoc(aptRef, {
+        status: booking.status === "active" ? "occupied" : "scheduled",
+      });
+
+      // Auto create cleaning task for check-out day
+      await addDoc(collection(db, "cleaningTasks"), {
+        apartmentId: booking.apartmentId,
+        bookingId: bookingRef.id,
+        date: booking.checkOut,
+        status: "pending",
+        cleanerName: "Amélie Dubois",
+        notes: `Nettoyage de rotation systématique suite au départ de ${booking.guestName}.`,
+        checklist: [
+          { id: "c1", text: "Retirer et laver le linge de lit", done: false },
+          { id: "c2", text: "Nettoyer et désinfecter la salle de bains", done: false },
+          { id: "c3", text: "Aspirer et laver les sols", done: false }
+        ],
+        ownerId: currentUser.id,
+      });
+
+      // Auto create instant chat thread
+      await addDoc(collection(db, "threads"), {
+        bookingId: bookingRef.id,
+        guestName: booking.guestName,
+        apartmentName: apartments.find((a) => a.id === booking.apartmentId)?.name || "Logement de prestige",
+        lastUpdated: new Date().toISOString(),
+        ownerId: currentUser.id,
+        messages: [
+          {
+            id: `msg-${Date.now()}`,
+            sender: "host",
+            text: `Bonjour ${booking.guestName} ! Nous sommes ravis d'enregistrer votre séjour. N'hésitez pas à nous poser des questions sur votre arrivée autonome.`,
+            timestamp: new Date().toISOString(),
+          }
+        ],
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, "bookings");
+    }
+  };
+
+  const handleUpdateBooking = async (booking: Booking) => {
+    if (!currentUser) return;
+    try {
+      const docRef = doc(db, "bookings", booking.id);
+      await setDoc(docRef, {
+        ...booking,
+        ownerId: booking.ownerId || currentUser.id,
+      });
+
+      // Maintain cascading status mapping (occupied, scheduled, free)
+      const aptRef = doc(db, "apartments", booking.apartmentId);
+      await updateDoc(aptRef, {
+        status:
+          booking.status === "active"
+            ? "occupied"
+            : booking.status === "upcoming"
+            ? "scheduled"
+            : "free",
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `bookings/${booking.id}`);
+    }
+  };
+
+  const handleDeleteBooking = async (id: string) => {
+    if (!currentUser) return;
+    try {
+      await deleteDoc(doc(db, "bookings", id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `bookings/${id}`);
+    }
+  };
+
+  // Cleaning Tasks
+  const handleAddCleaningTask = async (task: CleaningTask) => {
+    if (!currentUser) return;
+    try {
+      await addDoc(collection(db, "cleaningTasks"), {
+        apartmentId: task.apartmentId,
+        bookingId: task.bookingId,
+        date: task.date,
+        status: task.status,
+        cleanerName: task.cleanerName,
+        notes: task.notes || "",
+        checklist: task.checklist || [],
+        ownerId: currentUser.id,
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, "cleaningTasks");
+    }
+  };
+
+  const handleUpdateCleaningTask = async (task: CleaningTask) => {
+    if (!currentUser) return;
+    try {
+      const docRef = doc(db, "cleaningTasks", task.id);
+      await setDoc(docRef, {
+        ...task,
+        ownerId: task.ownerId || currentUser.id,
+      });
+
+      // Secure free-state propagation
+      if (task.status === "completed") {
+        const aptRef = doc(db, "apartments", task.apartmentId);
+        const aptSnap = await getDoc(aptRef);
+        if (aptSnap.exists() && aptSnap.data()?.status !== "occupied") {
+          await updateDoc(aptRef, { status: "free" });
+        }
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `cleaningTasks/${task.id}`);
+    }
+  };
+
+  const handleDeleteCleaningTask = async (id: string) => {
+    if (!currentUser) return;
+    try {
+      await deleteDoc(doc(db, "cleaningTasks", id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `cleaningTasks/${id}`);
+    }
+  };
+
+  // Chat Messenger
+  const handleAddMessage = async (threadId: string, text: string, sender: "host" | "guest") => {
+    if (!currentUser) return;
+    const matched = threads.find((t) => t.id === threadId);
+    if (!matched) return;
+    try {
+      const docRef = doc(db, "threads", threadId);
+      await setDoc(docRef, {
+        ...matched,
+        lastUpdated: new Date().toISOString(),
+        messages: [
+          ...matched.messages,
+          {
+            id: `msg-${Date.now()}`,
+            sender,
+            text,
+            timestamp: new Date().toISOString(),
+          }
+        ],
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `threads/${threadId}`);
+    }
+  };
+
+  // Admin Dashboard Core Actions
+  const handleToggleUserSuspension = async (targetUser: HomeOwner) => {
+    if (!currentUser || currentUser.role !== "admin") return;
+    try {
+      const userRef = doc(db, "users", targetUser.id);
+      await updateDoc(userRef, {
+        suspended: !targetUser.suspended,
+      });
+    } catch (error) {
+      console.error("Failed to toggle suspension", error);
+    }
+  };
+
+  const handleSaveUserEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser || currentUser.role !== "admin" || !editingUser) return;
+    try {
+      const userRef = doc(db, "users", editingUser.id);
+      await updateDoc(userRef, {
+        fullName: editFullName,
+        businessName: editBusinessName,
+        role: editRole,
+      });
+      setEditingUser(null);
+    } catch (error) {
+      console.error("Failed to save edited user settings", error);
+    }
+  };
+
+  // Light aesthetic Auth view with modern design home in background
+  if (!currentUser) {
+    return (
+      <div
+        id="auth-root"
+        className="min-h-screen text-slate-900 flex flex-col justify-between selection:bg-blue-600 selection:text-white relative bg-neutral-50"
+      >
+        {/* Beautiful high-end modern luxury architectural background with manicured front yard */}
+        <div className="absolute inset-0 overflow-hidden z-0">
+          <img
+            src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1920&q=80"
+            alt="Contemporary prestige modern residence with green lawn front yard landscape"
+            className="absolute inset-0 w-full h-full object-cover select-none"
+            referrerPolicy="no-referrer"
+          />
+          {/* Subtle dark layout shading for content contrast */}
+          <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-[1px]" />
+          {/* Soft sunset warmth overlay */}
+          <div className="absolute top-1/4 right-[5%] w-72 h-72 bg-amber-500/10 rounded-full blur-3xl opacity-60" />
+          <div className="absolute bottom-[20%] left-10 w-96 h-96 bg-blue-400/10 rounded-full blur-3xl opacity-40" />
+        </div>
+
+        {/* Auth Navbar */}
+        <header className="p-6 md:p-8 max-w-7xl mx-auto w-full flex items-center justify-between z-10 relative">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-to-tr from-sky-400 via-blue-500 to-indigo-600 rounded-xl flex items-center justify-center text-white shadow-md relative overflow-hidden">
+              <Layers className="w-5 h-5 text-white" />
+              <Sparkles className="w-2.5 h-2.5 text-amber-300 absolute -top-0.5 -right-0.5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-1">
+                <span className="text-sm font-black tracking-wider text-slate-800 font-mono">
+                  SPACE
+                </span>
+                <span className="text-[10px] font-black tracking-wide text-blue-700 bg-blue-50 border border-blue-100/50 px-1.5 py-0.5 rounded-md font-mono">
+                  ONE
+                </span>
+              </div>
+              <p className="text-[9px] font-bold text-slate-400 font-sans uppercase tracking-widest mt-0.5">
+                Conciergerie de Prestige
+              </p>
+            </div>
+          </div>
+
+          <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100/80 border border-slate-200 text-slate-600 text-[10px] font-bold tracking-wider uppercase font-sans">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse block"></span>
+            <span>Portail Cloud Firebase</span>
+          </div>
+        </header>
+
+        {/* Central Auth Login/Register Frame */}
+        <main className="flex-grow flex items-center justify-center p-4 md:p-8 z-10 w-full max-w-lg mx-auto relative">
+          <div className="w-full bg-white/95 border border-slate-200/80 backdrop-blur-xl rounded-3xl p-6 md:p-8 shadow-2xl flex flex-col space-y-6 relative z-10">
+            
+            {/* Form Headers */}
+            <div className="text-center space-y-1.5">
+              <h2 className="text-xl md:text-2xl font-black font-sans tracking-tight text-slate-800 uppercase">
+                {authMode === "login" ? "Accès Hébergeur" : "Créer votre Espace"}
+              </h2>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto font-sans leading-relaxed">
+                {authMode === "login" 
+                  ? "Saisissez vos identifiants de sécurité pour ouvrir votre dashboard unifié en temps réel."
+                  : "Accédez à un PMS haut de gamme avec assistants de messagerie IA."}
+              </p>
+            </div>
+
+            {/* Toggle tabs */}
+            <div className="grid grid-cols-2 p-1 bg-slate-100 border border-slate-200/50 rounded-xl">
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthError("");
+                  setAuthMode("login");
+                }}
+                className={`py-2 text-[10px] font-black font-sans rounded-lg transition-all cursor-pointer uppercase tracking-widest ${
+                  authMode === "login"
+                    ? "bg-white text-blue-700 shadow-xs border border-slate-200"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                Connexion
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthError("");
+                  setAuthMode("register");
+                }}
+                className={`py-2 text-[10px] font-black font-sans rounded-lg transition-all cursor-pointer uppercase tracking-widest ${
+                  authMode === "register"
+                    ? "bg-white text-blue-700 shadow-xs border border-slate-200"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                S'inscrire
+              </button>
+            </div>
+
+            {/* Error notifications */}
+            {authError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-sans flex items-start gap-2.5 animate-pulse font-medium">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-rose-500" />
+                <div>{authError}</div>
+              </div>
+            )}
+
+            {/* Form Renderer */}
+            {authMode === "login" ? (
+              <form onSubmit={handleLoginSubmit} className="space-y-4">
+                <div className="space-y-1.5 text-left">
+                  <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest font-sans">
+                    Email de Connexion
+                  </label>
+                  <div className="relative">
+                    <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="email"
+                      required
+                      value={loginEmail}
+                      onChange={(e) => setLoginEmail(e.target.value)}
+                      placeholder="ex: thomas.bernard@spaceone.com"
+                      className="w-full bg-white border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-xl py-2.5 pl-10 pr-4 text-xs font-sans text-slate-800 placeholder-slate-400 outline-none transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 text-left">
+                  <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest font-sans">
+                    Mot de passe
+                  </label>
+                  <div className="relative">
+                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="password"
+                      required
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full bg-white border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-xl py-2.5 pl-10 pr-4 text-xs font-mono text-slate-800 placeholder-slate-400 outline-none transition-all"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isLoadingSpace}
+                  className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold tracking-widest uppercase shadow-md cursor-pointer transition-all active:scale-98 flex items-center justify-center gap-2"
+                >
+                  {isLoadingSpace && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                  <span>Entrer dans l'Espace</span>
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleRegisterSubmit} className="space-y-4">
+                <div className="space-y-1.5 text-left">
+                  <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest font-sans">
+                    Nom Complet du gestionnaire
+                  </label>
+                  <div className="relative">
+                    <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      required
+                      value={regFullName}
+                      onChange={(e) => setRegFullName(e.target.value)}
+                      placeholder="Thomas Bernard"
+                      className="w-full bg-white border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-xl py-2.5 pl-10 pr-4 text-xs font-sans text-slate-800 placeholder-slate-400 outline-none transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 text-left">
+                  <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest font-sans">
+                    Nom de votre Espace / Conciergerie
+                  </label>
+                  <div className="relative">
+                    <Building className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      required
+                      value={regBusinessName}
+                      onChange={(e) => setRegBusinessName(e.target.value)}
+                      placeholder="Étoiles & Sommets Paris"
+                      className="w-full bg-white border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-xl py-2.5 pl-10 pr-4 text-xs font-sans text-slate-800 placeholder-slate-400 outline-none transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 text-left">
+                  <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest font-sans">
+                    Adresse e-mail
+                  </label>
+                  <div className="relative">
+                    <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="email"
+                      required
+                      value={regEmail}
+                      onChange={(e) => setRegEmail(e.target.value)}
+                      placeholder="contact@etoilesommets.com"
+                      className="w-full bg-white border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-xl py-2.5 pl-10 pr-4 text-xs font-sans text-slate-800 placeholder-slate-400 outline-none transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 text-left">
+                  <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest font-sans">
+                    Mot de passe
+                  </label>
+                  <div className="relative">
+                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="password"
+                      required
+                      value={regPassword}
+                      onChange={(e) => setRegPassword(e.target.value)}
+                      placeholder="6+ caractères"
+                      className="w-full bg-white border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-xl py-2.5 pl-10 pr-4 text-xs font-mono text-slate-800 placeholder-slate-400 outline-none transition-all"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isLoadingSpace}
+                  className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold tracking-widest uppercase shadow-md cursor-pointer transition-all active:scale-98 flex items-center justify-center gap-2"
+                >
+                  {isLoadingSpace && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                  <span>Créer mon Espace</span>
+                </button>
+              </form>
+            )}
+
+          </div>
+        </main>
+
+        {/* Auth footer */}
+        <footer className="p-6 text-center text-[9px] text-slate-400 font-sans border-t border-slate-200 bg-slate-50">
+          © 2026 SpaceOne Conciergerie de Prestige. Tous droits r�
+026 SpaceOne Conciergerie de Prestige. Tous droits réservés. Version 1.2 Enterprise.
+        </footer>
+      </div>
+    );
+  }
 
   // KPI Calculations
   const totalApartmentsCount = apartments.length;
@@ -318,6 +908,46 @@ export default function App() {
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* Homeowner Business & User Profile Badge */}
+        {currentUser && (
+          <div className="px-6 py-4 bg-slate-50 border-b border-slate-150 flex flex-col gap-3">
+            <div className="flex items-center gap-3">
+              {/* Profile Avatar with elegant space profile badge */}
+              <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-750 text-white font-extrabold flex items-center justify-center text-xs tracking-wider shadow-sm border border-white ring-2 ring-blue-600/10 shrink-0">
+                {currentUser.fullName ? currentUser.fullName.split(" ").map(w => w[0]).join("").toUpperCase().substring(0, 2) : "H"}
+              </div>
+              <div className="flex-grow min-w-0">
+                <div className="text-xs font-bold text-slate-800 truncate font-sans">
+                  {currentUser.fullName}
+                </div>
+                <div className="text-[10px] text-slate-400 truncate font-mono">
+                  {currentUser.email}
+                </div>
+                <div className="mt-1 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 block"></span>
+                  <span className="text-[10px] font-extrabold text-blue-600 truncate uppercase tracking-wider font-sans">
+                    {currentUser.businessName}
+                  </span>
+                </div>
+              </div>
+            </div>
+            
+            {/* Sign out / Switch owner workspace button */}
+            <button
+              onClick={() => {
+                localStorage.removeItem("spaceone_current_owner");
+                setCurrentUser(null);
+                setIsMenuOpen(false);
+              }}
+              className="w-full text-center py-2 rounded-lg border border-slate-200 hover:border-red-250 bg-white hover:bg-rose-50 text-[10px] font-bold text-slate-500 hover:text-red-650 transition-all font-sans cursor-pointer flex items-center justify-center gap-1.5 uppercase tracking-wider"
+              title="Se déconnecter"
+            >
+              <LogOut className="w-3.5 h-3.5 text-slate-400 group-hover:text-red-550" />
+              <span>Changer d'Espace</span>
+            </button>
+          </div>
+        )}
 
         {/* Slide Menu Navigation Links */}
         <nav className="p-6 space-y-2 flex-grow overflow-y-auto">
@@ -497,10 +1127,51 @@ export default function App() {
 
         {activeTab === "overview" && (
           <div className="space-y-8 animate-fade-in">
+            {/* Dashboard Business Banner */}
+            <div className="relative overflow-hidden bg-gradient-to-r from-slate-950 via-slate-900 to-blue-950 rounded-2xl p-6 md:p-8 text-white shadow-xl border border-slate-800">
+              {/* Background ambient accents */}
+              <div className="absolute right-0 top-0 -mt-8 -mr-8 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute left-1/3 bottom-0 w-48 h-48 bg-amber-500/5 rounded-full blur-2xl pointer-events-none" />
+              
+              <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="px-2.5 py-0.5 rounded-full bg-blue-500/20 border border-blue-400/20 text-blue-300 text-[10px] font-black uppercase tracking-widest font-sans">
+                      Hébergeur Actif : {currentUser?.fullName}
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/20 text-emerald-300 text-[10px] font-bold uppercase tracking-widest font-sans flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                      Espace Sécurisé
+                    </span>
+                  </div>
+                  
+                  {/* Business Name elegantly rendered */}
+                  <h1 className="text-2xl md:text-3.5xl font-extrabold tracking-tight font-sans text-white uppercase drop-shadow-xs">
+                    {currentUser?.businessName}
+                  </h1>
+                  <p className="text-slate-400 text-xs md:text-sm font-sans mt-2 max-w-xl">
+                    Tableau de bord de gestion et conciergerie unifiée pour votre parc de logements de prestige. Suivi en temps réel des séjours, rotations de ménage et assistants IA de messagerie.
+                  </p>
+                </div>
+
+                {/* Profile card widget inside banner */}
+                <div className="bg-white/5 border border-white/10 backdrop-blur-md rounded-xl p-4 flex items-center gap-3.5 md:min-w-[240px] shrink-0">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-600 text-white font-extrabold flex items-center justify-center text-sm shadow-md border border-white/20">
+                    {currentUser?.fullName ? currentUser.fullName.split(" ").map(w => w[0]).join("").toUpperCase().substring(0, 2) : "H"}
+                  </div>
+                  <div className="text-left">
+                    <div className="text-xs text-slate-400 font-medium uppercase tracking-wider font-sans">Compte Hébergeur</div>
+                    <div className="text-sm font-bold text-white truncate font-sans">{currentUser?.fullName}</div>
+                    <div className="text-[10px] text-blue-300 font-mono mt-0.5">{currentUser?.email}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Titre principal */}
             <div>
               <h2 className="text-2xl font-semibold tracking-tight text-slate-900 font-sans">
-                Aperçu SpaceOne & Suivi des Ménages
+                Aperçu de l'Espace & Suivi
               </h2>
               <p className="text-sm text-slate-500 font-sans mt-0.5">
                 Surveillance de l'état d'occupation en temps réel, coordination des rotations de nettoyage et messagerie assistée par l'IA de SpaceOne.

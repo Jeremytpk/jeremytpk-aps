@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { CleaningTask, Apartment } from "../types";
 import { CheckSquare, Square, CheckCircle2, AlertCircle, Plus, Trash2, Edit, X, Calendar, User, Clock, ClipboardList } from "lucide-react";
+import { formatDateToFR } from "../utils";
 
 interface CleaningTabProps {
   cleaningTasks: CleaningTask[];
@@ -208,7 +209,7 @@ export default function CleaningTab({
                     </h3>
                     <div className="flex items-center gap-2 text-xs text-slate-500 mt-1 font-mono">
                       <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                      <span>{task.date}</span>
+                      <span>{formatDateToFR(task.date)}</span>
                       <span className="text-slate-300">|</span>
                       <User className="w-3.5 h-3.5 text-slate-400" />
                       <span>{task.cleanerName}</span>

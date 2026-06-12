@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Booking, Apartment } from "../types";
 import { Calendar, User, Mail, Phone, DollarSign, Plus, Trash2, Edit3, Filter, Tag, X, CalendarDays, ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react";
+import { formatDateToFR } from "../utils";
 
 interface BookingsTabProps {
   bookings: Booking[];
@@ -133,11 +134,11 @@ export default function BookingsTab({
       {/* En-tête */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight text-slate-900 font-sans">
+          <h2 className="text-2xl font-semibold tracking-tight text-slate-900 font-sans font-medium tracking-tight">
             Réservations Voyageurs
           </h2>
           <p className="text-sm text-slate-500 font-sans mt-0.5">
-            Enregistrez les séjours, planifiez les arrivées, gérez la facturation et suivez les statuts de l'Auberge.
+            Enregistrez les séjours, planifiez les arrivées, gérez la facturation et suivez les statuts sur votre portail SpaceOne.
           </p>
         </div>
         {apartments.length === 0 ? (
@@ -250,7 +251,7 @@ export default function BookingsTab({
                     <div className="flex flex-col">
                       <span className="flex items-center gap-1 text-slate-800 text-xs font-mono">
                         <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                        {b.checkIn} → {b.checkOut}
+                        {formatDateToFR(b.checkIn)} → {formatDateToFR(b.checkOut)}
                       </span>
                       {b.notes && (
                         <span className="text-slate-400 text-xs mt-1 italic max-w-[200px] truncate" title={b.notes}>
@@ -466,7 +467,7 @@ export default function BookingsTab({
                 <div className="p-3 bg-rose-50 border border-rose-150 text-rose-700 text-xs font-bold font-sans rounded-xl flex items-center gap-2 animate-pulse">
                   <AlertTriangle className="w-4 h-4 flex-shrink-0 text-rose-600" />
                   <div>
-                    ⚠️ Cette date de séjour chevauche une réservation existante : {overlapWarning.guestName} ({overlapWarning.checkIn} au {overlapWarning.checkOut}).
+                    ⚠️ Cette date de séjour chevauche une réservation existante : {overlapWarning.guestName} ({formatDateToFR(overlapWarning.checkIn)} au {formatDateToFR(overlapWarning.checkOut)}).
                   </div>
                 </div>
               )}
@@ -659,7 +660,7 @@ export default function BookingsTab({
                 <div className="p-3 bg-rose-50 border border-rose-150 text-rose-700 text-xs font-bold font-sans rounded-xl flex items-center gap-2 animate-pulse">
                   <AlertTriangle className="w-4 h-4 flex-shrink-0 text-rose-600" />
                   <div>
-                    ⚠️ Cette date de séjour chevauche une réservation existante : {editOverlapWarning.guestName} ({editOverlapWarning.checkIn} au {editOverlapWarning.checkOut}).
+                    ⚠️ Cette date de séjour chevauche une réservation existante : {editOverlapWarning.guestName} ({formatDateToFR(editOverlapWarning.checkIn)} au {formatDateToFR(editOverlapWarning.checkOut)}).
                   </div>
                 </div>
               )}
@@ -972,7 +973,7 @@ function MiniCalendarPicker({
           }
 
           const hoverTitle = booking
-            ? `Réservé : ${booking.guestName} (${booking.checkIn} au ${booking.checkOut})`
+            ? `Réservé : ${booking.guestName} (${formatDateToFR(booking.checkIn)} au ${formatDateToFR(booking.checkOut)})`
             : isPast
             ? "Date passée"
             : dateStr;
