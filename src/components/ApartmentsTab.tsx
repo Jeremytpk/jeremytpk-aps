@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Apartment } from "../types";
-import { Building, MapPin, Users, Bed, Check, Plus, Trash2, Edit2, X, Upload, Image as ImageIcon, ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react";
+import { Building, MapPin, Users, Bed, Check, Plus, Trash2, Edit2, X, Upload, Image as ImageIcon, ChevronLeft, ChevronRight, AlertTriangle, Tag } from "lucide-react";
 
 interface ApartmentsTabProps {
   apartments: Apartment[];
@@ -29,6 +29,8 @@ export default function ApartmentsTab({
   const [status, setStatus] = useState<"free" | "occupied" | "scheduled">("free");
   const [thumbnail, setThumbnail] = useState("");
   const [details, setDetails] = useState("");
+  const [pricePerNight, setPricePerNight] = useState<number>(150);
+  const [discountPrice, setDiscountPrice] = useState<number | "">("");
   const [images, setImages] = useState<string[]>([]);
   const [newImageUrl, setNewImageUrl] = useState("");
   const [formError, setFormError] = useState("");
@@ -142,6 +144,8 @@ export default function ApartmentsTab({
     setStatus("free");
     setThumbnail("");
     setDetails("");
+    setPricePerNight(150);
+    setDiscountPrice("");
     setImages([]);
     setNewImageUrl("");
     setFormError("");
@@ -167,7 +171,9 @@ export default function ApartmentsTab({
       status,
       thumbnail: images[0],
       images: images,
-      details: details.trim()
+      details: details.trim(),
+      pricePerNight: Number(pricePerNight) || 150,
+      discountPrice: discountPrice !== "" ? Number(discountPrice) : undefined
     };
 
     onAddApartment(newApt);
@@ -200,7 +206,9 @@ export default function ApartmentsTab({
     setEditingApt({
       ...apt,
       images: apt.images && apt.images.length >= 3 ? apt.images : [apt.thumbnail, apt.thumbnail, apt.thumbnail],
-      details: apt.details || ""
+      details: apt.details || "",
+      pricePerNight: apt.pricePerNight || 150,
+      discountPrice: apt.discountPrice !== undefined ? apt.discountPrice : undefined
     });
     setFormError("");
   };
@@ -361,9 +369,31 @@ export default function ApartmentsTab({
             {/* Informations Générales */}
             <div className="p-5 flex-1 flex flex-col justify-between space-y-4">
               <div>
-                <h3 className="text-lg font-semibold text-slate-900 group-hover:text-slate-800">
-                  {apt.name}
-                </h3>
+                <div className="flex items-start justify-between gap-2 mt-1">
+                  <h3 className="text-lg font-semibold text-slate-900 group-hover:text-slate-800 leading-tight">
+                    {apt.name}
+                  </h3>
+                  {apt.discountPrice !== undefined ? (
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      <div className="inline-flex items-center gap-1 bg-amber-50 border border-amber-200 text-amber-800 text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-md">
+                        <Tag className="w-2.5 h-2.5 text-amber-600 animate-pulse shrink-0" />
+                        <span>PROMO</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 leading-none">
+                        <span className="text-[10px] font-medium text-slate-400 line-through">
+                          {apt.pricePerNight !== undefined ? apt.pricePerNight : 150} $
+                        </span>
+                        <span className="text-xs font-bold text-amber-700 bg-amber-50 px-2.5 py-1 border border-amber-200/60 rounded-lg">
+                          {apt.discountPrice} $ / nuit
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-1 border border-blue-100/60 rounded-lg shrink-0">
+                      {apt.pricePerNight !== undefined ? apt.pricePerNight : 150} $ / nuit
+                    </span>
+                  )}
+                </div>
                 <div className="flex items-start gap-1.5 text-slate-500 text-xs mt-1.5 leading-normal">
                   <MapPin className="w-3.5 h-3.5 mt-0.5 text-slate-400 flex-shrink-0" />
                   <span>{apt.address}</span>
@@ -540,6 +570,39 @@ export default function ApartmentsTab({
                   <option value="occupied">Occupé</option>
                   <option value="scheduled">Réservé (Planifié)</option>
                 </select>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5 font-sans">
+                    Prix par nuit ($) *
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    placeholder="Ex: 150"
+                    value={pricePerNight}
+                    onChange={(e) => setPricePerNight(Math.max(1, parseInt(e.target.value) || 0))}
+                    className="w-full text-slate-800 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-slate-400 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5 font-sans">
+                    Prix Spécial / Promotion ($)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="Ex: 120 (Optionnel)"
+                    value={discountPrice}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setDiscountPrice(val === "" ? "" : Math.max(1, parseInt(val) || 0));
+                    }}
+                    className="w-full text-slate-800 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-slate-400 font-mono"
+                  />
+                </div>
               </div>
 
               {/* Détails supplémentaires de l'appartement */}
@@ -792,6 +855,47 @@ export default function ApartmentsTab({
                   <option value="occupied">Occupé</option>
                   <option value="scheduled">Réservé (Planifié)</option>
                 </select>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5 font-sans">
+                    Prix par nuit ($) *
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    placeholder="Ex: 150"
+                    value={editingApt.pricePerNight !== undefined ? editingApt.pricePerNight : 150}
+                    onChange={(e) =>
+                      setEditingApt({
+                        ...editingApt,
+                        pricePerNight: Math.max(1, parseInt(e.target.value) || 0)
+                      })
+                    }
+                    className="w-full text-slate-800 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-slate-400 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5 font-sans">
+                    Prix Spécial / Promotion ($)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="Ex: 120 (Optionnel)"
+                    value={editingApt.discountPrice !== undefined ? editingApt.discountPrice : ""}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setEditingApt({
+                        ...editingApt,
+                        discountPrice: val === "" ? undefined : Math.max(1, parseInt(val) || 0)
+                      });
+                    }}
+                    className="w-full text-slate-800 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-slate-400 font-mono"
+                  />
+                </div>
               </div>
 
               {/* Détails supplémentaires de l'appartement */}

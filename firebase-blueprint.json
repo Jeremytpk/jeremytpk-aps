@@ -9,7 +9,7 @@
         "fullName": { "type": "string" },
         "email": { "type": "string" },
         "businessName": { "type": "string" },
-        "role": { "type": "string", "enum": ["espace", "admin"] },
+        "role": { "type": "string", "enum": ["espace", "admin", "personal"] },
         "suspended": { "type": "boolean" },
         "createdAt": { "type": "string" }
       },
@@ -41,6 +41,9 @@
         "apartmentId": { "type": "string" },
         "ownerId": { "type": "string" },
         "guestName": { "type": "string" },
+        "guestEmail": { "type": "string" },
+        "guestPhone": { "type": "string" },
+        "guestHasWhatsApp": { "type": "boolean" },
         "checkIn": { "type": "string" },
         "checkOut": { "type": "string" },
         "status": { "type": "string" },

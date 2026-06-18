@@ -263,7 +263,7 @@ export default function BookingsTab({
 
                   {/* Facture */}
                   <td className="px-5 py-4 text-center font-mono font-semibold text-slate-900">
-                    {b.totalAmount} €
+                    {b.totalAmount} $
                   </td>
 
                   {/* Badge de statut */}
@@ -488,7 +488,7 @@ export default function BookingsTab({
                 </div>
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5 font-sans">
-                    Total Séjour (€)
+                    Total Séjour ($)
                   </label>
                   <input
                     type="number"
@@ -686,7 +686,7 @@ export default function BookingsTab({
                 </div>
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5 font-sans">
-                    Montant Séjour (€)
+                    Montant Séjour ($)
                   </label>
                   <input
                     type="number"

@@ -10,6 +10,8 @@ export interface Apartment {
   thumbnail: string;
   images?: string[]; // Array of 3 to 10 layout/apartment images
   details?: string;  // More details about the apartment shown below the address
+  pricePerNight?: number; // Price per night defined by the owner
+  discountPrice?: number; // Optional special or discounted price per night
 }
 
 export interface Booking {
@@ -19,6 +21,7 @@ export interface Booking {
   guestName: string;
   guestEmail: string;
   guestPhone: string;
+  guestHasWhatsApp?: boolean;
   checkIn: string; // YYYY-MM-DD
   checkOut: string; // YYYY-MM-DD
   guestsCount: number;
@@ -63,6 +66,6 @@ export interface HomeOwner {
   businessName: string;
   avatarUrl?: string;
   createdAt: string;
-  role: "espace" | "admin";
+  role: "espace" | "admin" | "personal";
   suspended?: boolean;
 }

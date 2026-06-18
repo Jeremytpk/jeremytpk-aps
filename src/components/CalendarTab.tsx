@@ -200,7 +200,7 @@ export default function CalendarTab({ apartments, bookings }: CalendarTabProps) 
                           </div>
                           <div>
                             <span className="text-slate-400 block text-[10px] uppercase font-mono">Total Séjour :</span>
-                            <span className="font-bold text-amber-400 block">{booking.totalAmount} €</span>
+                            <span className="font-bold text-amber-400 block">{booking.totalAmount} $</span>
                           </div>
                           {booking.notes && (
                             <div className="pt-1 text-[10px] text-slate-300 italic border-t border-slate-800">

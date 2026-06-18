@@ -9,6 +9,8 @@ import CalendarTab from "./components/CalendarTab";
 import CommunicationTab from "./components/CommunicationTab";
 import ProfileModal from "./components/ProfileModal";
 import PublicCatalog from "./components/PublicCatalog";
+import spaceOneTextRight from "../assets/SpaceOneTextRight.png";
+import spaceOneLogo from "../assets/SpaceOneLogo.png";
 
 // Firebase
 import { db, auth, handleFirestoreError, OperationType } from "./firebase";
@@ -75,6 +77,8 @@ export default function App() {
   const [regBusinessName, setRegBusinessName] = useState("");
   const [regEmail, setRegEmail] = useState("");
   const [regPassword, setRegPassword] = useState("");
+  const [regConfirmPassword, setRegConfirmPassword] = useState("");
+  const [regAccountType, setRegAccountType] = useState<"personal" | "partner">("personal");
   const [authError, setAuthError] = useState("");
   const [isLoadingSpace, setIsLoadingSpace] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -82,10 +86,12 @@ export default function App() {
   // Public catalog states
   const [publicSpaceId, setPublicSpaceId] = useState<string | null>(null);
   const [publicOwner, setPublicOwner] = useState<HomeOwner | null>(null);
+  const [publicPartners, setPublicPartners] = useState<Record<string, HomeOwner>>({});
   const [publicApartments, setPublicApartments] = useState<Apartment[]>([]);
   const [publicLoading, setPublicLoading] = useState(false);
   const [publicError, setPublicError] = useState("");
   const [copiedLink, setCopiedLink] = useState(false);
+  const [forceShowLogin, setForceShowLogin] = useState(false);
 
   // State lists
   const [apartments, setApartments] = useState<Apartment[]>([]);
@@ -108,7 +114,7 @@ export default function App() {
   // Gemini configuration notification state
   const [aiConfigured, setAiConfigured] = useState<boolean>(true);
 
-  // Load public shared catalog if space ID parameter is present
+  // Load public shared catalog if space ID parameter is present, otherwise load global catalog
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const spaceId = params.get("space");
@@ -126,6 +132,7 @@ export default function App() {
           }
           const ownerData = ownerDoc.data() as HomeOwner;
           setPublicOwner(ownerData);
+          setPublicPartners({ [spaceId]: { id: spaceId, ...ownerData } });
 
           // Listen to or query public apartments
           const q = query(collection(db, "apartments"), where("ownerId", "==", spaceId));
@@ -143,6 +150,41 @@ export default function App() {
         }
       };
       loadPublicSpace();
+    } else {
+      // Load ALL apartments for the global landing page catalog
+      const loadAllPrestige = async () => {
+        setPublicLoading(true);
+        setPublicError("");
+        try {
+          const q = query(collection(db, "apartments"));
+          const snap = await getDocs(q);
+          const list: Apartment[] = [];
+          snap.forEach((doc) => {
+            list.push({ id: doc.id, ...doc.data() } as Apartment);
+          });
+          setPublicApartments(list);
+          setPublicOwner(null); // Indicates global catalog landing page
+
+          // Load partner details for all listed apartments
+          try {
+            const usersSnap = await getDocs(collection(db, "users"));
+            const partnersMap: Record<string, HomeOwner> = {};
+            usersSnap.forEach((doc) => {
+              const uData = doc.data() as HomeOwner;
+              partnersMap[doc.id] = { id: doc.id, ...uData };
+            });
+            setPublicPartners(partnersMap);
+          } catch (err) {
+            console.error("Failed to load global partners for catalog:", err);
+          }
+        } catch (err: any) {
+          console.error("Failed to load global workspace apartments:", err);
+          setPublicError("Erreur lors du chargement général des appartements.");
+        } finally {
+          setPublicLoading(false);
+        }
+      };
+      loadAllPrestige();
     }
   }, []);
 
@@ -226,6 +268,7 @@ export default function App() {
 
     const uid = currentUser.id;
     const isUserAdmin = currentUser.role === "admin";
+    const isUserPersonal = currentUser.role === "personal";
 
     // 1. Listen to Apartments
     const apartmentsQuery = isUserAdmin
@@ -287,16 +330,20 @@ export default function App() {
       console.error("Firestore onSnapshot failure (threads)", error);
     });
 
-    // 5. Admin extra listener - all users
+    // 5. Admin and Client extra listener - all users
     let unsubscribeUsers = () => {};
-    if (isUserAdmin) {
+    if (isUserAdmin || isUserPersonal) {
       const usersQuery = collection(db, "users");
       unsubscribeUsers = onSnapshot(usersQuery, (snapshot) => {
         const list: HomeOwner[] = [];
+        const partnersMap: Record<string, HomeOwner> = {};
         snapshot.forEach((doc) => {
-          list.push({ id: doc.id, ...doc.data() } as HomeOwner);
+          const uData = { id: doc.id, ...doc.data() } as HomeOwner;
+          list.push(uData);
+          partnersMap[doc.id] = uData;
         });
         setAllUsers(list);
+        setPublicPartners(partnersMap);
       }, (error) => {
         console.error("Firestore onSnapshot failure (users)", error);
       });
@@ -366,10 +413,28 @@ export default function App() {
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!regFullName || !regBusinessName || !regEmail || !regPassword) {
-      setAuthError("Veuillez remplir tous les champs.");
+    
+    // Check if passwords match
+    if (regPassword !== regConfirmPassword) {
+      setAuthError("Les deux mots de passe ne correspondent pas. Veuillez réessayer.");
       return;
     }
+
+    const isPersonal = regAccountType === "personal";
+    
+    // Validate required fields based on account type
+    if (isPersonal) {
+      if (!regFullName || !regEmail || !regPassword) {
+        setAuthError("Veuillez remplir tous les champs requis.");
+        return;
+      }
+    } else {
+      if (!regFullName || !regBusinessName || !regEmail || !regPassword) {
+        setAuthError("Veuillez remplir tous les champs requis, y compris le nom de votre Conciergerie.");
+        return;
+      }
+    }
+
     setAuthError("");
     setIsLoadingSpace(true);
     isRegisteringRef.current = true; // Block auth state observer race conditions
@@ -381,12 +446,12 @@ export default function App() {
       const emailLower = regEmail.toLowerCase();
       // Ensure specific target emails receive the required Admin status dynamically
       const isSystemAdmin = emailLower === "admin@spaceone.com" || emailLower === "jeremytopaka@gmail.com";
-      const role = isSystemAdmin ? "admin" : "espace";
+      const role = isSystemAdmin ? "admin" : (isPersonal ? "personal" : "espace");
 
       const newOwner: HomeOwner = {
         id: userId,
         fullName: regFullName,
-        businessName: regBusinessName,
+        businessName: isPersonal ? "Compte Personnel" : regBusinessName,
         email: regEmail,
         createdAt: new Date().toISOString(),
         role: role,
@@ -401,11 +466,12 @@ export default function App() {
       setRegBusinessName("");
       setRegEmail("");
       setRegPassword("");
+      setRegConfirmPassword("");
       setAuthError("");
     } catch (error: any) {
       console.error("Registration call failed", error);
       if (error.code === "auth/email-already-in-use") {
-        setAuthError("Cet e-mail est déjà utilisé par un autre hébergeur.");
+        setAuthError("Cet e-mail est déjà utilisé par un autre hébergeur ou utilisateur.");
       } else if (error.code === "auth/weak-password") {
         setAuthError("Votre mot de passe doit contenir au moins 6 caractères.");
       } else {
@@ -658,8 +724,8 @@ export default function App() {
     }
   };
 
-  // Public Catalog Routing
-  if (publicSpaceId) {
+  // Public Catalog & Global Landing Page Routing
+  if (!currentUser && !forceShowLogin) {
     if (publicLoading) {
       return (
         <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center space-y-4">
@@ -677,26 +743,49 @@ export default function App() {
         </div>
       );
     }
-    if (publicOwner) {
-      return (
-        <PublicCatalog
-          spaceId={publicSpaceId}
-          owner={publicOwner}
-          apartments={publicApartments}
-          onBookingSuccess={() => {
-            // Re-fetch public apartments on successful booking to update real-time statistics
-            const q = query(collection(db, "apartments"), where("ownerId", "==", publicSpaceId));
-            getDocs(q).then((snap) => {
-              const list: Apartment[] = [];
-              snap.forEach((doc) => {
-                list.push({ id: doc.id, ...doc.data() } as Apartment);
-              });
-              setPublicApartments(list);
-            }).catch(e => console.error("Error refreshing public active apartments:", e));
-          }}
-        />
-      );
-    }
+    return (
+      <PublicCatalog
+        spaceId={publicSpaceId}
+        owner={publicOwner}
+        apartments={publicApartments}
+        partners={publicPartners}
+        onLoginClick={() => setForceShowLogin(true)}
+        onBookingSuccess={() => {
+          // Re-fetch public apartments on successful booking to update real-time statistics
+          const q = publicSpaceId
+            ? query(collection(db, "apartments"), where("ownerId", "==", publicSpaceId))
+            : query(collection(db, "apartments"));
+          getDocs(q).then((snap) => {
+            const list: Apartment[] = [];
+            snap.forEach((doc) => {
+              list.push({ id: doc.id, ...doc.data() } as Apartment);
+            });
+            setPublicApartments(list);
+          }).catch(e => console.error("Error refreshing public active apartments:", e));
+        }}
+      />
+    );
+  }
+
+  // Route logged-in personal role accounts (Guests) to the custom Client Portal
+  if (currentUser && currentUser.role === "personal") {
+    return (
+      <PublicCatalog
+        spaceId={null}
+        owner={null}
+        apartments={apartments}
+        partners={publicPartners}
+        onBookingSuccess={() => {}}
+        currentUser={currentUser}
+        onLogout={async () => {
+          await signOut(auth);
+          setCurrentUser(null);
+        }}
+        bookings={bookings}
+        threads={threads}
+        onAddMessage={handleAddMessage}
+      />
+    );
   }
 
   // Light aesthetic Auth view with modern design home in background
@@ -723,29 +812,15 @@ export default function App() {
 
         {/* Auth Navbar */}
         <header className="p-6 md:p-8 max-w-7xl mx-auto w-full flex items-center justify-between z-10 relative">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-tr from-sky-400 via-blue-500 to-indigo-600 rounded-xl flex items-center justify-center text-white shadow-md relative overflow-hidden">
-              <Layers className="w-5 h-5 text-white" />
-              <Sparkles className="w-2.5 h-2.5 text-amber-300 absolute -top-0.5 -right-0.5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-1">
-                <span className="text-sm font-black tracking-wider text-slate-800 font-mono">
-                  SPACE
-                </span>
-                <span className="text-[10px] font-black tracking-wide text-blue-700 bg-blue-50 border border-blue-100/50 px-1.5 py-0.5 rounded-md font-mono">
-                  ONE
-                </span>
-              </div>
-              <p className="text-[9px] font-bold text-slate-400 font-sans uppercase tracking-widest mt-0.5">
-                Conciergerie de Prestige
-              </p>
-            </div>
-          </div>
+          <div></div>
 
-          <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100/80 border border-slate-200 text-slate-600 text-[10px] font-bold tracking-wider uppercase font-sans">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse block"></span>
-            <span>Portail Cloud Firebase</span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setForceShowLogin(false)}
+              className="inline-flex items-center gap-1 px-3.5 py-1.5 border border-slate-200 hover:border-slate-300 rounded-xl bg-white/90 hover:bg-white text-slate-700 font-extrabold tracking-wider font-sans text-[10px] uppercase cursor-pointer transition-all shadow-xs active:scale-95"
+            >
+              <span>← Voir le Catalogue</span>
+            </button>
           </div>
         </header>
 
@@ -753,15 +828,29 @@ export default function App() {
         <main className="flex-grow flex items-center justify-center p-4 md:p-8 z-10 w-full max-w-lg mx-auto relative">
           <div className="w-full bg-white/95 border border-slate-200/80 backdrop-blur-xl rounded-3xl p-6 md:p-8 shadow-2xl flex flex-col space-y-6 relative z-10">
             
-            {/* Form Headers */}
-            <div className="text-center space-y-1.5">
+            {/* Form Headers with exactly 7px space under Logo */}
+            <div className="text-center">
+              {/* Logo image on top of Login container */}
+              <div className="flex justify-center animate-fadeIn" style={{ marginBottom: "7px" }}>
+                <img 
+                  src={spaceOneLogo} 
+                  alt="SpaceOne Logo" 
+                  className="h-28 w-auto object-contain rounded-[15px]" 
+                  style={{ borderRadius: '15px' }}
+                  referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+              </div>
+
               <h2 className="text-xl md:text-2xl font-black font-sans tracking-tight text-slate-800 uppercase">
                 {authMode === "login" ? "Accès Hébergeur" : "Créer votre Espace"}
               </h2>
-              <p className="text-xs text-slate-500 max-w-sm mx-auto font-sans leading-relaxed">
+              <p className="text-xs text-slate-500 max-w-sm mx-auto font-sans leading-relaxed mt-1.5 animate-fadeIn">
                 {authMode === "login" 
                   ? "Saisissez vos identifiants de sécurité pour ouvrir votre dashboard unifié en temps réel."
-                  : "Accédez à un PMS haut de gamme avec assistants de messagerie IA."}
+                  : "Accédez à un PMS haut de gamme with assistants de messagerie IA."}
               </p>
             </div>
 
@@ -853,9 +942,48 @@ export default function App() {
               </form>
             ) : (
               <form onSubmit={handleRegisterSubmit} className="space-y-4">
+                
+                {/* Choix du type de compte (Personnel vs Partenaire) */}
                 <div className="space-y-1.5 text-left">
                   <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest font-sans">
-                    Nom Complet du gestionnaire
+                    Type de compte désiré
+                  </label>
+                  <div className="grid grid-cols-2 p-1 bg-slate-100 border border-slate-200/50 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthError("");
+                        setRegAccountType("personal");
+                      }}
+                      className={`py-2 text-[10px] font-bold font-sans rounded-lg transition-all cursor-pointer text-center uppercase tracking-wider ${
+                        regAccountType === "personal"
+                          ? "bg-white text-blue-750 shadow-xs border border-slate-200"
+                          : "text-slate-550 hover:text-slate-800"
+                      }`}
+                    >
+                      Personnel (Client)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthError("");
+                        setRegAccountType("partner");
+                      }}
+                      className={`py-2 text-[10px] font-bold font-sans rounded-lg transition-all cursor-pointer text-center uppercase tracking-wider ${
+                        regAccountType === "partner"
+                          ? "bg-white text-blue-750 shadow-xs border border-slate-200"
+                          : "text-slate-550 hover:text-slate-800"
+                      }`}
+                    >
+                      Partenaire (Concierge)
+                    </button>
+                  </div>
+                </div>
+
+                {/* Nom Complet */}
+                <div className="space-y-1.5 text-left">
+                  <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest font-sans">
+                    {regAccountType === "personal" ? "Votre Nom Complet" : "Nom Complet du gestionnaire"}
                   </label>
                   <div className="relative">
                     <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -870,23 +998,27 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="space-y-1.5 text-left">
-                  <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest font-sans">
-                    Nom de votre Espace / Conciergerie
-                  </label>
-                  <div className="relative">
-                    <Building className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input
-                      type="text"
-                      required
-                      value={regBusinessName}
-                      onChange={(e) => setRegBusinessName(e.target.value)}
-                      placeholder="Étoiles & Sommets Paris"
-                      className="w-full bg-white border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-xl py-2.5 pl-10 pr-4 text-xs font-sans text-slate-800 placeholder-slate-400 outline-none transition-all"
-                    />
+                {/* Nom Conciergerie (Uniquement si Partenaire) */}
+                {regAccountType === "partner" && (
+                  <div className="space-y-1.5 text-left">
+                    <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest font-sans">
+                      Nom de votre Espace / Conciergerie
+                    </label>
+                    <div className="relative">
+                      <Building className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input
+                        type="text"
+                        required
+                        value={regBusinessName}
+                        onChange={(e) => setRegBusinessName(e.target.value)}
+                        placeholder="Étoiles & Sommets Paris"
+                        className="w-full bg-white border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-xl py-2.5 pl-10 pr-4 text-xs font-sans text-slate-800 placeholder-slate-400 outline-none transition-all"
+                      />
+                    </div>
                   </div>
-                </div>
+                )}
 
+                {/* Email */}
                 <div className="space-y-1.5 text-left">
                   <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest font-sans">
                     Adresse e-mail
@@ -898,12 +1030,13 @@ export default function App() {
                       required
                       value={regEmail}
                       onChange={(e) => setRegEmail(e.target.value)}
-                      placeholder="contact@etoilesommets.com"
+                      placeholder={regAccountType === "personal" ? "votre.email@domaine.com" : "contact@etoilesommets.com"}
                       className="w-full bg-white border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-xl py-2.5 pl-10 pr-4 text-xs font-sans text-slate-800 placeholder-slate-400 outline-none transition-all"
                     />
                   </div>
                 </div>
 
+                {/* Mot de passe */}
                 <div className="space-y-1.5 text-left">
                   <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest font-sans">
                     Mot de passe
@@ -921,13 +1054,31 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* Confirmation Mot de passe */}
+                <div className="space-y-1.5 text-left">
+                  <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest font-sans">
+                    Confirmer le mot de passe
+                  </label>
+                  <div className="relative">
+                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="password"
+                      required
+                      value={regConfirmPassword}
+                      onChange={(e) => setRegConfirmPassword(e.target.value)}
+                      placeholder="Saisissez à nouveau"
+                      className="w-full bg-white border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-xl py-2.5 pl-10 pr-4 text-xs font-mono text-slate-800 placeholder-slate-400 outline-none transition-all"
+                    />
+                  </div>
+                </div>
+
                 <button
                   type="submit"
                   disabled={isLoadingSpace}
                   className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold tracking-widest uppercase shadow-md cursor-pointer transition-all active:scale-98 flex items-center justify-center gap-2"
                 >
                   {isLoadingSpace && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-                  <span>Créer mon Espace</span>
+                  <span>{regAccountType === "personal" ? "Créer mon Compte" : "Créer mon Espace"}</span>
                 </button>
               </form>
             )}
@@ -973,24 +1124,17 @@ export default function App() {
       >
         {/* Slide Menu Header (Brand and Close Button) */}
         <div className="p-6 border-b border-slate-150 flex items-center justify-between bg-slate-50/50">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-tr from-slate-950 via-slate-900 to-blue-900 rounded-xl flex items-center justify-center text-white shadow-md border border-slate-800 ring-4 ring-blue-500/10 shrink-0 relative overflow-hidden">
-              <Layers className="w-5 h-5 text-blue-400" />
-              <Sparkles className="w-2.5 h-2.5 text-amber-300 absolute -top-0.5 -right-0.5 animate-pulse" />
-            </div>
-            <div>
-              <div className="flex items-center gap-1">
-                <span className="text-sm font-black tracking-wider text-slate-900 font-mono">
-                  SPACE
-                </span>
-                <span className="text-[10px] font-black tracking-wide text-blue-600 bg-blue-50 border border-blue-100/50 px-1.5 py-0.5 rounded-md font-mono">
-                  ONE
-                </span>
-              </div>
-              <p className="text-[9px] font-bold text-slate-400 font-sans uppercase tracking-widest mt-0.5">
-                Conciergerie de Prestige
-              </p>
-            </div>
+          <div className="flex items-center">
+            <img 
+              src={spaceOneTextRight} 
+              alt="SpaceOne" 
+              className="h-[55px] w-auto object-contain rounded-[15px]" 
+              style={{ borderRadius: '15px' }}
+              referrerPolicy="no-referrer"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
           </div>
           <button
             onClick={() => setIsMenuOpen(false)}
@@ -1185,45 +1329,41 @@ export default function App() {
       {/* Upper Navigation Bar */}
       <header className="bg-white border-b border-slate-100 sticky top-0 z-45 shadow-3xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between gap-4">
-          {/* Éléments de marque */}
+          {/* Menu button on the left with Branding elements */}
           <div className="flex items-center gap-3 md:gap-4.5">
-            <div className="w-11 h-11 bg-gradient-to-tr from-slate-950 via-slate-900 to-blue-900 rounded-xl flex items-center justify-center text-white shadow-lg border border-slate-800 ring-4 ring-blue-500/10 shrink-0 relative overflow-hidden group">
-              <Layers className="w-5.5 h-5.5 text-blue-400 transition-transform duration-300 group-hover:scale-110" />
-              <Sparkles className="w-3 h-3 text-amber-300 absolute -top-0.5 -right-0.5 animate-pulse" />
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5">
-                <span className="text-lg md:text-xl font-black tracking-wider text-slate-900 font-mono leading-none">
-                  SPACE
-                </span>
-                <span className="text-[10px] md:text-xs font-black tracking-wide text-blue-600 bg-blue-50 border border-blue-100/50 px-2 py-0.5 rounded-lg font-mono">
-                  ONE
-                </span>
-              </div>
-              <p className="text-[9px] md:text-[10px] font-bold text-slate-400 font-sans tracking-wide mt-1">
-                Portail de Conciergerie & PMS de Prestige
-              </p>
+            {/* Menu toggle button */}
+            <button
+              id="menu-toggle-btn"
+              onClick={() => setIsMenuOpen(true)}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white shadow-md font-semibold tracking-wider font-sans text-xs uppercase cursor-pointer transition-all duration-200 border border-transparent ring-2 ring-blue-600/10 active:scale-95 shrink-0"
+              title="Ouvrir le menu de navigation"
+            >
+              <Menu className="w-4 h-4" />
+              <span className="hidden sm:inline">Menu</span>
+            </button>
+
+            {/* Éléments de marque */}
+            <div className="flex items-center">
+              <img 
+                src={spaceOneTextRight} 
+                alt="SpaceOne" 
+                className="h-[55px] md:h-[63px] w-auto object-contain rounded-[15px]" 
+                style={{ borderRadius: '15px' }}
+                referrerPolicy="no-referrer"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
             </div>
           </div>
 
-          {/* Actions & Menu Trigger Button */}
+          {/* Actions on the right */}
           <div className="flex items-center gap-3">
             {/* Desktop-only quick info badge */}
             <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-50 border border-slate-100 text-slate-500 text-[10px] font-bold tracking-wider uppercase font-sans">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse block"></span>
               <span>Système Actif</span>
             </div>
-
-            {/* Menu toggle button */}
-            <button
-              id="menu-toggle-btn"
-              onClick={() => setIsMenuOpen(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white shadow-md font-semibold tracking-wider font-sans text-xs uppercase cursor-pointer transition-all duration-200 border border-transparent ring-2 ring-blue-600/10 active:scale-95"
-              title="Ouvrir le menu de navigation"
-            >
-              <Menu className="w-4 h-4" />
-              <span>Menu</span>
-            </button>
           </div>
         </div>
       </header>
@@ -1373,7 +1513,7 @@ export default function App() {
                     Revenus Cumulés
                   </span>
                   <div className="text-2xl font-bold text-slate-900 font-mono">
-                    {totalEarningsInFlow} €
+                    {totalEarningsInFlow} $
                   </div>
                   <span className="text-xs text-slate-500 block">
                     Séjours confirmés
