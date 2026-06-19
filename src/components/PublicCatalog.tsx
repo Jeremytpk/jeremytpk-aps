@@ -913,7 +913,18 @@ export default function PublicCatalog({
 
                   <div className="p-6 space-y-5">
                     <div className="space-y-2">
-                      <h2 className="text-lg font-extrabold text-slate-850 font-sans tracking-tight leading-tight">
+                      {(() => {
+                        const aptOwner = (partners && selectedApartment.ownerId ? partners[selectedApartment.ownerId] : null) || dynamicOwner || owner;
+                        const bizName = aptOwner?.businessName || "SpaceOne Conciergerie";
+                        return (
+                          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-50 border border-slate-100 text-slate-700 rounded-lg text-xs font-bold font-sans">
+                            <Building className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                            <span>Gérant : <strong className="text-slate-900 font-extrabold">{bizName}</strong></span>
+                          </div>
+                        );
+                      })()}
+
+                      <h2 className="text-lg font-extrabold text-slate-850 font-sans tracking-tight leading-tight pt-1">
                         {selectedApartment.name}
                       </h2>
                       <p className="text-xs text-slate-400 flex items-center gap-1 font-sans">
@@ -947,10 +958,20 @@ export default function PublicCatalog({
                     <hr className="border-slate-100" />
 
                     <div className="p-4 bg-blue-50/50 border border-blue-100/60 rounded-xl space-y-1">
-                      <div className="text-[10px] text-blue-500 font-black uppercase tracking-wider font-sans">Services de Conciergerie Associés</div>
-                      <p className="text-[11px] text-slate-600 font-sans leading-relaxed">
-                        ✓ Assistance messagerie et concierge réactif H24 • ✓ Nettoyage et blanchisserie professionnelle avant l'arrivée • ✓ Arrivée autonome fluide simplifiée.
-                      </p>
+                      {(() => {
+                        const aptOwner = (partners && selectedApartment.ownerId ? partners[selectedApartment.ownerId] : null) || dynamicOwner || owner;
+                        const bizName = aptOwner?.businessName || "la conciergerie SpaceOne";
+                        return (
+                          <>
+                            <div className="text-[10px] text-blue-500 font-black uppercase tracking-wider font-sans">
+                              Services de Conciergerie de {bizName}
+                            </div>
+                            <p className="text-[11px] text-slate-600 font-sans leading-relaxed">
+                              ✓ Assistance messagerie et concierge réactif H24 • ✓ Nettoyage et blanchisserie professionnelle avant l'arrivée • ✓ Arrivée autonome fluide simplifiée.
+                            </p>
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
