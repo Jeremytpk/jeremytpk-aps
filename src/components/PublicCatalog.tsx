@@ -671,9 +671,6 @@ export default function PublicCatalog({
                   <div className="text-left">
                     <div className="text-[9px] text-slate-400 font-bold uppercase tracking-widest font-sans">Plateforme Prestige</div>
                     <div className="text-sm font-bold text-white font-sans">SpaceOne Conciergerie</div>
-                    <div className="text-[10px] text-emerald-400 font-mono flex items-center gap-1 mt-0.5">
-                      <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span> Système Actif
-                    </div>
                   </div>
                 </>
               )}

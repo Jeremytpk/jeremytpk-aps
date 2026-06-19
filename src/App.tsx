@@ -165,14 +165,22 @@ export default function App() {
           setPublicApartments(list);
           setPublicOwner(null); // Indicates global catalog landing page
 
-          // Load partner details for all listed apartments
+          // Load partner details for all listed apartments by fetching unique owners individually
           try {
-            const usersSnap = await getDocs(collection(db, "users"));
+            const uniqueOwnerIds = Array.from(new Set(list.map(apt => apt.ownerId).filter(Boolean)));
             const partnersMap: Record<string, HomeOwner> = {};
-            usersSnap.forEach((doc) => {
-              const uData = doc.data() as HomeOwner;
-              partnersMap[doc.id] = { id: doc.id, ...uData };
-            });
+            await Promise.all(
+              uniqueOwnerIds.map(async (ownerId) => {
+                try {
+                  const ownerDoc = await getDoc(doc(db, "users", ownerId));
+                  if (ownerDoc.exists()) {
+                    partnersMap[ownerId] = { id: ownerId, ...ownerDoc.data() } as HomeOwner;
+                  }
+                } catch (singleErr) {
+                  console.error(`Failed to load partner detail for owner ${ownerId}:`, singleErr);
+                }
+              })
+            );
             setPublicPartners(partnersMap);
           } catch (err) {
             console.error("Failed to load global partners for catalog:", err);
@@ -271,7 +279,7 @@ export default function App() {
     const isUserPersonal = currentUser.role === "personal";
 
     // 1. Listen to Apartments
-    const apartmentsQuery = isUserAdmin
+    const apartmentsQuery = (isUserAdmin || isUserPersonal)
       ? collection(db, "apartments")
       : query(collection(db, "apartments"), where("ownerId", "==", uid));
 
@@ -286,7 +294,7 @@ export default function App() {
     });
 
     // 2. Listen to Bookings
-    const bookingsQuery = isUserAdmin
+    const bookingsQuery = (isUserAdmin || isUserPersonal)
       ? collection(db, "bookings")
       : query(collection(db, "bookings"), where("ownerId", "==", uid));
 
@@ -330,9 +338,9 @@ export default function App() {
       console.error("Firestore onSnapshot failure (threads)", error);
     });
 
-    // 5. Admin and Client extra listener - all users
+    // 5. Admin extra listener - all users
     let unsubscribeUsers = () => {};
-    if (isUserAdmin || isUserPersonal) {
+    if (isUserAdmin) {
       const usersQuery = collection(db, "users");
       unsubscribeUsers = onSnapshot(usersQuery, (snapshot) => {
         const list: HomeOwner[] = [];
@@ -357,6 +365,41 @@ export default function App() {
       unsubscribeUsers();
     };
   }, [currentUser]);
+
+  // Load partner details dynamically for guest/personal users when their catalog of apartments changes
+  useEffect(() => {
+    if (currentUser?.role === "personal" && apartments.length > 0) {
+      const loadPersonalPartners = async () => {
+        try {
+          const uniqueOwnerIds: string[] = Array.from(new Set(apartments.map(apt => apt.ownerId)))
+            .filter((id): id is string => typeof id === "string" && id !== "");
+          const partnersMap: Record<string, HomeOwner> = { ...publicPartners };
+          let changed = false;
+          await Promise.all(
+            uniqueOwnerIds.map(async (ownerId: string) => {
+              // If we already have this partner's details, skip fetching
+              if (partnersMap[ownerId]) return;
+              try {
+                const ownerDoc = await getDoc(doc(db, "users", ownerId));
+                if (ownerDoc.exists()) {
+                  partnersMap[ownerId] = { id: ownerId, ...ownerDoc.data() } as HomeOwner;
+                  changed = true;
+                }
+              } catch (singleErr) {
+                console.error(`Failed to load dynamic partner detail for owner ${ownerId}:`, singleErr);
+              }
+            })
+          );
+          if (changed) {
+            setPublicPartners(partnersMap);
+          }
+        } catch (err) {
+          console.error("Failed to load personal partners dynamically:", err);
+        }
+      };
+      loadPersonalPartners();
+    }
+  }, [currentUser, apartments]);
 
   // Auth Action Handlers
   const handleLoginSubmit = async (e: React.FormEvent) => {
