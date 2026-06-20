@@ -795,12 +795,18 @@ export default function PublicCatalog({
                                 <span className="truncate">{apt.address}</span>
                               </p>
 
-                              {apt.ownerId && partners && partners[apt.ownerId] && (
-                                <div className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-50/70 border border-blue-100 rounded text-[9.5px] font-semibold text-blue-700 font-sans mt-0.5">
-                                  <Building className="w-2.5 h-2.5 text-blue-500 shrink-0" />
-                                  <span>Gérant : {partners[apt.ownerId].businessName}</span>
-                                </div>
-                              )}
+                              {(() => {
+                                const aptOwner = (partners && apt.ownerId ? partners[apt.ownerId] : null) || owner;
+                                if (aptOwner) {
+                                  return (
+                                    <div className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-50/70 border border-blue-100 rounded text-[9.5px] font-semibold text-blue-700 font-sans mt-0.5">
+                                      <Building className="w-2.5 h-2.5 text-blue-500 shrink-0" />
+                                      <span>Gérant : {aptOwner.businessName || "Compte Personnel"}</span>
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              })()}
                             </div>
 
                             {/* Specifications */}
@@ -855,14 +861,28 @@ export default function PublicCatalog({
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-fade-in text-left">
               
-              {/* BACK BTN */}
-              <div className="lg:col-span-12 mb-2">
+              {/* BACK BTN & CONCIERGERIE CO-BRANDING */}
+              <div className="lg:col-span-12 mb-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-100 pb-4">
                 <button
                   onClick={resetForm}
-                  className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl text-slate-600 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer inline-flex items-center gap-2"
+                  className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl text-slate-600 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer inline-flex items-center gap-2 max-w-max"
                 >
                   ← Retour au Catalogue
                 </button>
+                {(() => {
+                  const aptOwner = (partners && selectedApartment.ownerId ? partners[selectedApartment.ownerId] : null) || dynamicOwner || owner;
+                  if (aptOwner) {
+                    return (
+                      <div className="flex items-center gap-2 bg-slate-50 border border-slate-200/50 rounded-xl px-3 py-1.5 max-w-max">
+                        <Building className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                        <span className="text-[10px] font-bold text-slate-500 font-mono uppercase tracking-wider">
+                          Espace Conciergerie : <strong className="text-slate-800 font-extrabold">{aptOwner.businessName || "SpaceOne Conciergerie"}</strong>
+                        </span>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
 
               {/* Left Column: Apartment Detail Card */}

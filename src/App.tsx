@@ -538,6 +538,10 @@ export default function App() {
         maxGuests: Number(apt.maxGuests),
         status: apt.status || "free",
         thumbnail: apt.thumbnail || "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=800&q=80",
+        images: apt.images || [],
+        details: apt.details || "",
+        pricePerNight: Number(apt.pricePerNight) || 150,
+        ...(apt.discountPrice !== undefined && apt.discountPrice !== null && !isNaN(Number(apt.discountPrice)) ? { discountPrice: Number(apt.discountPrice) } : {}),
         ownerId: currentUser.id,
       });
     } catch (error) {

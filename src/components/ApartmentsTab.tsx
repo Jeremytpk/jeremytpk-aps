@@ -2,11 +2,64 @@ import React, { useState } from "react";
 import { Apartment } from "../types";
 import { Building, MapPin, Users, Bed, Check, Plus, Trash2, Edit2, X, Upload, Image as ImageIcon, ChevronLeft, ChevronRight, AlertTriangle, Tag } from "lucide-react";
 
+// Client-side image compression helper to downscale image size and reduce Firestore payload size
+const compressImage = (file: File, maxWidth = 1000, maxHeight = 1000, quality = 0.7): Promise<string> => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let width = img.width;
+        let height = img.height;
+
+        // Calculate downscaled dimensions maintaining aspect ratio
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(event.target?.result as string); // fallback to original data url
+          return;
+        }
+
+        // Draw image with smooth scaling
+        ctx.fillStyle = "#FFFFFF";
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        // Export to JPEG with compressed quality
+        const dataUrl = canvas.toDataURL("image/jpeg", quality);
+        resolve(dataUrl);
+      };
+      img.onerror = () => {
+        resolve(""); // resolve empty string on image error
+      };
+    };
+    reader.onerror = () => {
+      resolve(""); // resolve empty string on reader error
+    };
+  });
+};
+
 interface ApartmentsTabProps {
   apartments: Apartment[];
-  onAddApartment: (apt: Apartment) => void;
-  onUpdateApartment: (apt: Apartment) => void;
-  onDeleteApartment: (id: string) => void;
+  onAddApartment: (apt: Apartment) => Promise<void>;
+  onUpdateApartment: (apt: Apartment) => Promise<void>;
+  onDeleteApartment: (id: string) => Promise<void>;
 }
 
 export default function ApartmentsTab({
@@ -19,6 +72,7 @@ export default function ApartmentsTab({
   const [editingApt, setEditingApt] = useState<Apartment | null>(null);
   const [search, setSearch] = useState("");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Form states
   const [name, setName] = useState("");
@@ -63,26 +117,21 @@ export default function ApartmentsTab({
     }
   };
 
-  const processMultipleFiles = (files: FileList, callback: (urls: string[]) => void) => {
-    const loadedUrls: string[] = [];
-    let processedCount = 0;
+  const processMultipleFiles = async (files: FileList, callback: (urls: string[]) => void) => {
     const fileArray = Array.from(files).filter(f => f.type.startsWith("image/"));
-
     if (fileArray.length === 0) return;
 
-    fileArray.forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result && typeof event.target.result === "string") {
-          loadedUrls.push(event.target.result);
-        }
-        processedCount++;
-        if (processedCount === fileArray.length) {
-          callback(loadedUrls);
-        }
-      };
-      reader.readAsDataURL(file);
-    });
+    setFormError("Compression des images en cours...");
+    try {
+      const promises = fileArray.map((file) => compressImage(file, 1000, 1000, 0.7));
+      const results = await Promise.all(promises);
+      const validUrls = results.filter((url) => url !== "");
+      setFormError("");
+      callback(validUrls);
+    } catch (err) {
+      console.error("Compression error:", err);
+      setFormError("Erreur lors du traitement d'image.");
+    }
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -152,7 +201,7 @@ export default function ApartmentsTab({
     setDragActive(false);
   };
 
-  const handleAddSubmit = (e: React.FormEvent) => {
+  const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !address) return;
 
@@ -176,12 +225,32 @@ export default function ApartmentsTab({
       discountPrice: discountPrice !== "" ? Number(discountPrice) : undefined
     };
 
-    onAddApartment(newApt);
-    setIsAddOpen(false);
-    resetForm();
+    setIsSubmitting(true);
+    setFormError("");
+    try {
+      await onAddApartment(newApt);
+      setIsAddOpen(false);
+      resetForm();
+    } catch (err: any) {
+      console.error("Error adding apartment:", err);
+      let errMsg = "Erreur lors de la création de l'hébergement.";
+      if (err instanceof Error) {
+        try {
+          const parsed = JSON.parse(err.message);
+          if (parsed && parsed.error) {
+            errMsg = `Erreur de base de données : ${parsed.error}`;
+          }
+        } catch {
+          errMsg = err.message;
+        }
+      }
+      setFormError(errMsg);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleEditSubmit = (e: React.FormEvent) => {
+  const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingApt) return;
 
@@ -197,9 +266,29 @@ export default function ApartmentsTab({
       thumbnail: editImages[0]
     };
 
-    onUpdateApartment(updatedApt);
-    setEditingApt(null);
+    setIsSubmitting(true);
     setFormError("");
+    try {
+      await onUpdateApartment(updatedApt);
+      setEditingApt(null);
+      setFormError("");
+    } catch (err: any) {
+      console.error("Error updating apartment:", err);
+      let errMsg = "Erreur lors de la mise à jour de l'hébergement.";
+      if (err instanceof Error) {
+        try {
+          const parsed = JSON.parse(err.message);
+          if (parsed && parsed.error) {
+            errMsg = `Erreur de base de données : ${parsed.error}`;
+          }
+        } catch {
+          errMsg = err.message;
+        }
+      }
+      setFormError(errMsg);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const startEdit = (apt: Apartment) => {
@@ -726,16 +815,25 @@ export default function ApartmentsTab({
               <div className="pt-4 flex items-center justify-end gap-3">
                 <button
                   type="button"
+                  disabled={isSubmitting}
                   onClick={() => setIsAddOpen(false)}
-                  className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 focus:outline-hidden cursor-pointer"
+                  className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 focus:outline-hidden cursor-pointer disabled:opacity-50"
                 >
                   Annuler
                 </button>
                 <button
                   type="submit"
-                  className="bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors cursor-pointer"
+                  disabled={isSubmitting}
+                  className="bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors cursor-pointer disabled:opacity-60 flex items-center gap-2"
                 >
-                  Créer le Logement
+                  {isSubmitting ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Création...</span>
+                    </>
+                  ) : (
+                    <span>Créer le Logement</span>
+                  )}
                 </button>
               </div>
             </form>
@@ -1024,16 +1122,25 @@ export default function ApartmentsTab({
               <div className="pt-4 flex items-center justify-end gap-3">
                 <button
                   type="button"
+                  disabled={isSubmitting}
                   onClick={() => setEditingApt(null)}
-                  className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 focus:outline-hidden cursor-pointer"
+                  className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 focus:outline-hidden cursor-pointer disabled:opacity-50"
                 >
                   Annuler
                 </button>
                 <button
                   type="submit"
-                  className="bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors cursor-pointer"
+                  disabled={isSubmitting}
+                  className="bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors cursor-pointer disabled:opacity-60 flex items-center gap-2"
                 >
-                  Enregistrer les modifications
+                  {isSubmitting ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Enregistrement...</span>
+                    </>
+                  ) : (
+                    <span>Enregistrer les modifications</span>
+                  )}
                 </button>
               </div>
             </form>
