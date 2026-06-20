@@ -9,9 +9,17 @@
         "fullName": { "type": "string" },
         "email": { "type": "string" },
         "businessName": { "type": "string" },
-        "role": { "type": "string", "enum": ["espace", "admin", "personal"] },
+        "role": { "type": "string", "enum": ["espace", "admin", "personal", "worker"] },
         "suspended": { "type": "boolean" },
-        "createdAt": { "type": "string" }
+        "createdAt": { "type": "string" },
+        "approved": { "type": "boolean" },
+        "isCleaningAllowed": { "type": "boolean" },
+        "parentId": { "type": "string" },
+        "password": { "type": "string" },
+        "isCleaningAccessRequested": { "type": "boolean" },
+        "cleaningAccessRequestedAt": { "type": "string" },
+        "phone": { "type": "string" },
+        "loginCode": { "type": "string" }
       },
       "required": ["id", "fullName", "email", "businessName", "role", "suspended", "createdAt"]
     },
@@ -61,7 +69,9 @@
         "ownerId": { "type": "string" },
         "date": { "type": "string" },
         "status": { "type": "string" },
-        "notes": { "type": "string" }
+        "notes": { "type": "string" },
+        "cleanerId": { "type": "string" },
+        "cleanerName": { "type": "string" }
       },
       "required": ["id", "apartmentId", "ownerId", "date", "status"]
     },

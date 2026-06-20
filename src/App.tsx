@@ -9,10 +9,20 @@ import CalendarTab from "./components/CalendarTab";
 import CommunicationTab from "./components/CommunicationTab";
 import ProfileModal from "./components/ProfileModal";
 import PublicCatalog from "./components/PublicCatalog";
+import CleaningUpgradeRequestView from "./components/CleaningUpgradeRequestView";
+import TermsModal from "./components/TermsModal";
 import spaceOneTextRight from "../assets/SpaceOneTextRight.png";
 import spaceOneLogo from "../assets/SpaceOneLogo.png";
 
 // Firebase
+import firebaseConfig from "../firebase-applet-config.json";
+import { initializeApp, getApp } from "firebase/app";
+import { getFirestore as getFirestoreSecondary } from "firebase/firestore";
+import {
+  getAuth as getAuthSecondary,
+  createUserWithEmailAndPassword as createUserWithEmailAndPasswordSecondary,
+  signOut as signOutSecondary
+} from "firebase/auth";
 import { db, auth, handleFirestoreError, OperationType } from "./firebase";
 import {
   createUserWithEmailAndPassword,
@@ -101,15 +111,42 @@ export default function App() {
   const [allUsers, setAllUsers] = useState<HomeOwner[]>([]); // For admin use
 
   // View control
-  const [activeTab, setActiveTab] = useState<"overview" | "apartments" | "bookings" | "cleaning" | "chat" | "admin">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "apartments" | "bookings" | "cleaning" | "chat" | "admin" | "team">(() => {
+    const localUserStr = localStorage.getItem("spaceone_custom_user");
+    if (localUserStr) {
+      try {
+        const parsed = JSON.parse(localUserStr);
+        if (parsed && parsed.role === "worker") {
+          return "cleaning";
+        }
+      } catch (e) {}
+    }
+    return "overview";
+  });
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isTermsOpen, setIsTermsOpen] = useState(false);
+  const [termsDefaultTab, setTermsDefaultTab] = useState<"concierge" | "guest">("concierge");
 
   // Admin Workspace state
-  const [adminSubTab, setAdminSubTab] = useState<"users" | "apartments" | "bookings">("users");
+  const [adminSubTab, setAdminSubTab] = useState<"users" | "bookings" | "workers">("users");
   const [editingUser, setEditingUser] = useState<HomeOwner | null>(null);
   const [editFullName, setEditFullName] = useState("");
   const [editBusinessName, setEditBusinessName] = useState("");
   const [editRole, setEditRole] = useState<"espace" | "admin">("espace");
+
+  // Worker sub-account creation state
+  const [newWorkerName, setNewWorkerName] = useState("");
+  const [newWorkerEmail, setNewWorkerEmail] = useState("");
+  const [newWorkerPassword, setNewWorkerPassword] = useState("");
+  const [newWorkerParentId, setNewWorkerParentId] = useState("");
+  const [workerFirstName, setWorkerFirstName] = useState("");
+  const [workerLastName, setWorkerLastName] = useState("");
+  const [workerPhone, setWorkerPhone] = useState("");
+  const [workerLoginCodeInput, setWorkerLoginCodeInput] = useState("");
+  const [workerLoginError, setWorkerLoginError] = useState("");
+  const [isCreatingWorker, setIsCreatingWorker] = useState(false);
+  const [workerError, setWorkerError] = useState("");
+  const [workerSuccess, setWorkerSuccess] = useState("");
 
   // Gemini configuration notification state
   const [aiConfigured, setAiConfigured] = useState<boolean>(true);
@@ -130,9 +167,9 @@ export default function App() {
             setPublicLoading(false);
             return;
           }
-          const ownerData = ownerDoc.data() as HomeOwner;
+          const ownerData = { id: ownerDoc.id, ...ownerDoc.data() } as HomeOwner;
           setPublicOwner(ownerData);
-          setPublicPartners({ [spaceId]: { id: spaceId, ...ownerData } });
+          setPublicPartners({ [spaceId]: ownerData });
 
           // Listen to or query public apartments
           const q = query(collection(db, "apartments"), where("ownerId", "==", spaceId));
@@ -198,7 +235,43 @@ export default function App() {
 
   // Auth observer subscription
   useEffect(() => {
+    // Custom worker / local storage user check first
+    const localUserStr = localStorage.getItem("spaceone_custom_user");
+    if (localUserStr) {
+      setIsLoadingSpace(true);
+      try {
+        const parsed = JSON.parse(localUserStr) as HomeOwner;
+        getDoc(doc(db, "users", parsed.id)).then((docSnap) => {
+          if (docSnap.exists()) {
+            const freshData = { id: docSnap.id, ...docSnap.data() } as HomeOwner;
+            if (freshData.suspended) {
+              setAuthError("Votre compte de travailleur a été suspendu par l'administration.");
+              localStorage.removeItem("spaceone_custom_user");
+              setCurrentUser(null);
+            } else {
+              setCurrentUser(freshData);
+              setAuthError("");
+            }
+          } else {
+            setCurrentUser(parsed);
+          }
+        }).catch((err) => {
+          console.warn("Could not reload custom user, using stored values:", err);
+          setCurrentUser(parsed);
+        }).finally(() => {
+          setIsLoadingSpace(false);
+        });
+      } catch (err) {
+        console.error("Failed to parse custom local user sync:", err);
+        setIsLoadingSpace(false);
+      }
+    }
+
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (localStorage.getItem("spaceone_custom_user")) {
+        // Skip firebase auth observer if custom user is active
+        return;
+      }
       if (firebaseUser) {
         if (isRegisteringRef.current) {
           // Skip general load - registering handler manages state setup
@@ -208,7 +281,7 @@ export default function App() {
         try {
           const userDocSnap = await getDoc(doc(db, "users", firebaseUser.uid));
           if (userDocSnap.exists()) {
-            const userData = userDocSnap.data() as HomeOwner;
+            const userData = { id: userDocSnap.id, ...userDocSnap.data() } as HomeOwner;
             if (userData.suspended) {
               setAuthError("Votre compte d'hébergeur a été suspendu par l'administration.");
               await signOut(auth);
@@ -228,6 +301,8 @@ export default function App() {
               createdAt: new Date().toISOString(),
               role: isSystemAdmin ? "admin" : "espace",
               suspended: false,
+              approved: isSystemAdmin ? true : false,
+              isCleaningAllowed: true,
             };
             try {
               await setDoc(doc(db, "users", firebaseUser.uid), healedUser);
@@ -244,7 +319,9 @@ export default function App() {
           setIsLoadingSpace(false);
         }
       } else {
-        setCurrentUser(null);
+        if (!localStorage.getItem("spaceone_custom_user")) {
+          setCurrentUser(null);
+        }
       }
     });
 
@@ -277,11 +354,15 @@ export default function App() {
     const uid = currentUser.id;
     const isUserAdmin = currentUser.role === "admin";
     const isUserPersonal = currentUser.role === "personal";
+    // For workers, retrieve apartments, bookings, cleaning tasks, and threads from their parent concierge workspace (parentId)
+    const effectiveOwnerId = (currentUser.role === "worker" && currentUser.parentId)
+      ? currentUser.parentId
+      : uid;
 
     // 1. Listen to Apartments
     const apartmentsQuery = (isUserAdmin || isUserPersonal)
       ? collection(db, "apartments")
-      : query(collection(db, "apartments"), where("ownerId", "==", uid));
+      : query(collection(db, "apartments"), where("ownerId", "==", effectiveOwnerId));
 
     const unsubscribeApts = onSnapshot(apartmentsQuery, (snapshot) => {
       const list: Apartment[] = [];
@@ -296,7 +377,7 @@ export default function App() {
     // 2. Listen to Bookings
     const bookingsQuery = (isUserAdmin || isUserPersonal)
       ? collection(db, "bookings")
-      : query(collection(db, "bookings"), where("ownerId", "==", uid));
+      : query(collection(db, "bookings"), where("ownerId", "==", effectiveOwnerId));
 
     const unsubscribeBookings = onSnapshot(bookingsQuery, (snapshot) => {
       const list: Booking[] = [];
@@ -311,7 +392,7 @@ export default function App() {
     // 3. Listen to CleaningTasks
     const cleaningQuery = isUserAdmin
       ? collection(db, "cleaningTasks")
-      : query(collection(db, "cleaningTasks"), where("ownerId", "==", uid));
+      : query(collection(db, "cleaningTasks"), where("ownerId", "==", effectiveOwnerId));
 
     const unsubscribeCleaning = onSnapshot(cleaningQuery, (snapshot) => {
       const list: CleaningTask[] = [];
@@ -326,7 +407,7 @@ export default function App() {
     // 4. Listen to Threads
     const threadsQuery = isUserAdmin
       ? collection(db, "threads")
-      : query(collection(db, "threads"), where("ownerId", "==", uid));
+      : query(collection(db, "threads"), where("ownerId", "==", effectiveOwnerId));
 
     const unsubscribeThreads = onSnapshot(threadsQuery, (snapshot) => {
       const list: MessageThread[] = [];
@@ -355,6 +436,18 @@ export default function App() {
       }, (error) => {
         console.error("Firestore onSnapshot failure (users)", error);
       });
+    } else if (currentUser.role === "espace") {
+      const usersQuery = query(collection(db, "users"), where("parentId", "==", uid));
+      unsubscribeUsers = onSnapshot(usersQuery, (snapshot) => {
+        const list: HomeOwner[] = [];
+        snapshot.forEach((doc) => {
+          const uData = { id: doc.id, ...doc.data() } as HomeOwner;
+          list.push(uData);
+        });
+        setAllUsers(list);
+      }, (error) => {
+        console.error("Firestore onSnapshot failure (users for espace)", error);
+      });
     }
 
     return () => {
@@ -365,6 +458,13 @@ export default function App() {
       unsubscribeUsers();
     };
   }, [currentUser]);
+
+  // Handle Admin user tab routing constraint
+  useEffect(() => {
+    if (currentUser?.role === "admin" && activeTab === "overview") {
+      setActiveTab("admin");
+    }
+  }, [currentUser, activeTab]);
 
   // Load partner details dynamically for guest/personal users when their catalog of apartments changes
   useEffect(() => {
@@ -410,18 +510,47 @@ export default function App() {
     }
     setAuthError("");
     setIsLoadingSpace(true);
+    localStorage.removeItem("spaceone_custom_user");
+
+    try {
+      // 1. Try to check if this is a custom worker account first
+      const emailLower = loginEmail.toLowerCase().trim();
+      const q = query(collection(db, "users"), where("email", "==", emailLower));
+      const qSnap = await getDocs(q);
+      if (!qSnap.empty) {
+        const foundUser = { id: qSnap.docs[0].id, ...qSnap.docs[0].data() } as HomeOwner;
+        if (foundUser.role === "worker" && foundUser.password === loginPassword) {
+          if (foundUser.suspended) {
+            setAuthError("Votre compte de travailleur a été suspendu par l'administration.");
+            setIsLoadingSpace(false);
+            return;
+          }
+          // Authenticate in Firebase Auth so that other document readers don't fail due to isSignedIn restrictions
+          await signInWithEmailAndPassword(auth, emailLower, loginPassword);
+          localStorage.setItem("spaceone_custom_user", JSON.stringify(foundUser));
+          setCurrentUser(foundUser);
+          setActiveTab("cleaning");
+          setAuthError("");
+          setIsLoadingSpace(false);
+          return;
+        }
+      }
+    } catch (workerErr) {
+      console.warn("Worker database check bypassed/failed:", workerErr);
+    }
 
     try {
       const userCredential = await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
       const userSnap = await getDoc(doc(db, "users", userCredential.user.uid));
       if (userSnap.exists()) {
-        const userData = userSnap.data() as HomeOwner;
+        const userData = { id: userSnap.id, ...userSnap.data() } as HomeOwner;
         if (userData.suspended) {
           setAuthError("Votre compte d'hébergeur a été suspendu par l'administration.");
           await signOut(auth);
           setCurrentUser(null);
         } else {
           setCurrentUser(userData);
+          setActiveTab("overview");
           setAuthError("");
         }
       } else {
@@ -434,9 +563,12 @@ export default function App() {
           createdAt: new Date().toISOString(),
           role: isSystemAdmin ? "admin" : "espace",
           suspended: false,
+          approved: isSystemAdmin ? true : false,
+          isCleaningAllowed: true,
         };
         await setDoc(doc(db, "users", userCredential.user.uid), fallbackUser);
         setCurrentUser(fallbackUser);
+        setActiveTab("overview");
       }
     } catch (error: any) {
       console.error("Login call failed", error);
@@ -449,6 +581,48 @@ export default function App() {
       } else {
         setAuthError(`Erreur d'authentification : ${error.message || error}`);
       }
+    } finally {
+      setIsLoadingSpace(false);
+    }
+  };
+
+  const handleWorkerLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!workerLoginCodeInput.trim()) {
+      setWorkerLoginError("Veuillez saisir votre code d'accès.");
+      return;
+    }
+    setWorkerLoginError("");
+    setIsLoadingSpace(true);
+    localStorage.removeItem("spaceone_custom_user");
+
+    try {
+      const codeClean = workerLoginCodeInput.trim().toLowerCase();
+      const q = query(collection(db, "users"), where("loginCode", "==", codeClean));
+      const qSnap = await getDocs(q);
+      if (!qSnap.empty) {
+        const foundUser = { id: qSnap.docs[0].id, ...qSnap.docs[0].data() } as HomeOwner;
+        if (foundUser.role === "worker") {
+          if (foundUser.suspended) {
+            setWorkerLoginError("Votre compte de collaborateur a été suspendu par l'administration.");
+            setIsLoadingSpace(false);
+            return;
+          }
+
+          localStorage.setItem("spaceone_custom_user", JSON.stringify(foundUser));
+          setCurrentUser(foundUser);
+          setActiveTab("cleaning");
+          setWorkerLoginError("");
+          setWorkerLoginCodeInput("");
+        } else {
+          setWorkerLoginError("Ce code ne correspond pas à un compte collaborateur.");
+        }
+      } else {
+        setWorkerLoginError("Code d'accès invalide. Veuillez vérifier le code de 7 caractères.");
+      }
+    } catch (err: any) {
+      console.error("Worker code login error:", err);
+      setWorkerLoginError("Erreur lors de la synchronisation de la connexion.");
     } finally {
       setIsLoadingSpace(false);
     }
@@ -499,6 +673,8 @@ export default function App() {
         createdAt: new Date().toISOString(),
         role: role,
         suspended: false,
+        approved: role !== "espace", // Espace needs admin approval; personal and admin don't.
+        isCleaningAllowed: true,
       };
 
       // Create main metadata in Firebase
@@ -671,15 +847,20 @@ export default function App() {
   const handleAddCleaningTask = async (task: CleaningTask) => {
     if (!currentUser) return;
     try {
+      // Find the apartment to see who its owner actually is
+      const apt = apartments.find(a => a.id === task.apartmentId);
+      const computedOwnerId = apt?.ownerId || task.ownerId || currentUser.id;
+
       await addDoc(collection(db, "cleaningTasks"), {
         apartmentId: task.apartmentId,
         bookingId: task.bookingId,
         date: task.date,
         status: task.status,
         cleanerName: task.cleanerName,
+        cleanerId: task.cleanerId || "",
         notes: task.notes || "",
         checklist: task.checklist || [],
-        ownerId: currentUser.id,
+        ownerId: computedOwnerId,
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, "cleaningTasks");
@@ -768,6 +949,162 @@ export default function App() {
       setEditingUser(null);
     } catch (error) {
       console.error("Failed to save edited user settings", error);
+    }
+  };
+
+  const handleToggleUserApproval = async (targetUser: HomeOwner) => {
+    if (!currentUser || currentUser.role !== "admin") return;
+    try {
+      const userRef = doc(db, "users", targetUser.id);
+      await updateDoc(userRef, {
+        approved: !targetUser.approved,
+      });
+    } catch (error) {
+      console.error("Failed to toggle user approval", error);
+    }
+  };
+
+  const handleToggleUserCleaning = async (targetUser: HomeOwner) => {
+    if (!currentUser || currentUser.role !== "admin") return;
+    try {
+      const userRef = doc(db, "users", targetUser.id);
+      const nextVal = targetUser.isCleaningAllowed === false ? true : false;
+      await updateDoc(userRef, {
+        isCleaningAllowed: nextVal,
+        ...(nextVal ? { isCleaningAccessRequested: false } : {})
+      });
+    } catch (error) {
+      console.error("Failed to toggle cleaning allowed status", error);
+    }
+  };
+
+  const handleRequestCleaningAccess = async () => {
+    if (!currentUser) return;
+    try {
+      const userRef = doc(db, "users", currentUser.id);
+      const now = new Date().toISOString();
+      await updateDoc(userRef, {
+        isCleaningAccessRequested: true,
+        cleaningAccessRequestedAt: now,
+      });
+      setCurrentUser((prev) =>
+        prev
+          ? {
+              ...prev,
+              isCleaningAccessRequested: true,
+              cleaningAccessRequestedAt: now,
+            }
+          : null
+      );
+    } catch (error) {
+      console.error("Failed to submit cleaning access request", error);
+      throw error;
+    }
+  };
+
+  const handleDeleteUser = async (targetUserId: string) => {
+    if (!currentUser) return;
+    const resolvedRole = currentUser.role;
+    if (resolvedRole !== "admin" && resolvedRole !== "espace") return;
+    try {
+      await deleteDoc(doc(db, "users", targetUserId));
+    } catch (error) {
+      console.error("Failed to delete user", error);
+    }
+  };
+
+  const handleCreateWorkerSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
+    if (!workerFirstName.trim() || !workerLastName.trim() || !workerPhone.trim()) {
+      setWorkerError("Veuillez remplir tous les champs (Prénom, Nom de famille, Numéro de contact).");
+      return;
+    }
+    setWorkerError("");
+    setWorkerSuccess("");
+    setIsCreatingWorker(true);
+
+    try {
+      // Generate a unique 7-character login code combining name letters and random numbers
+      const fClean = workerFirstName.replace(/[^a-zA-Z]/g, "").toLowerCase();
+      const lClean = workerLastName.replace(/[^a-zA-Z]/g, "").toLowerCase();
+      const combined = fClean + lClean;
+      let letterPrefix = combined.substring(0, 4);
+      if (letterPrefix.length < 3) {
+        letterPrefix = (letterPrefix + "col").substring(0, 3);
+      }
+      const digitsNeeded = 7 - letterPrefix.length;
+      let randDigits = "";
+      for (let i = 0; i < digitsNeeded; i++) {
+        randDigits += Math.floor(Math.random() * 10).toString();
+      }
+      const loginCode = letterPrefix + randDigits;
+
+      const generatedEmail = `${loginCode}@spaceone-worker.com`;
+      const generatedPassword = `${loginCode}_secret`;
+
+      // Resolve the parent ID and business name
+      const computedParentId = currentUser.role === "admin" ? newWorkerParentId : currentUser.id;
+      if (!computedParentId) {
+        setWorkerError("Veuillez sélectionner un compte principal (Conciergerie) pour rattacher ce travailleur.");
+        setIsCreatingWorker(false);
+        return;
+      }
+
+      // Find the parent company name
+      const parentUser = allUsers.find(u => u.id === computedParentId) || currentUser;
+      const computedParentBusiness = parentUser.businessName || "Espace Conciergerie";
+
+      // Register the child worker using secondary app pattern so we don't disrupt current login session!
+      let secondApp;
+      try {
+        secondApp = getApp("SecondaryWorkerApp");
+      } catch {
+        secondApp = initializeApp(firebaseConfig, "SecondaryWorkerApp");
+      }
+      const secondAuth = getAuthSecondary(secondApp);
+      const secondDb = getFirestoreSecondary(secondApp, firebaseConfig.firestoreDatabaseId);
+
+      // 1. Create client side firebase auth user via secondary app (doesn't log out current user!)
+      const cred = await createUserWithEmailAndPasswordSecondary(secondAuth, generatedEmail, generatedPassword);
+      const newUid = cred.user.uid;
+
+      // 2. Write user document to users collection using the secondary Firestore context while still authenticated in secondary app
+      const workerFullName = `${workerFirstName.trim()} ${workerLastName.trim()}`;
+      const newWorker: HomeOwner = {
+        id: newUid,
+        email: generatedEmail,
+        fullName: workerFullName,
+        businessName: computedParentBusiness,
+        createdAt: new Date().toISOString(),
+        role: "worker",
+        suspended: false,
+        approved: true, // Auto-approved by default when created by an active concierge or admin
+        parentId: computedParentId,
+        password: generatedPassword, // stored for custom local login check fallback
+        isCleaningAllowed: true,
+        phone: workerPhone.trim(),
+        loginCode: loginCode,
+      };
+
+      await setDoc(doc(secondDb, "users", newUid), newWorker);
+
+      // 3. Sign out the secondary app immediately so it is clean
+      await signOutSecondary(secondAuth);
+
+      setWorkerSuccess(`Le collaborateur ${workerFullName} a été enregistré ! Son code de connexion unique à 7 caractères est : ${loginCode.toUpperCase()}`);
+      setWorkerFirstName("");
+      setWorkerLastName("");
+      setWorkerPhone("");
+    } catch (err: any) {
+      console.error("Secondary worker creation error", err);
+      if (err.code === "auth/email-already-in-use") {
+        setWorkerError("Ce code généré existe déjà, veuillez soumettre à nouveau pour générer d'autres chiffres.");
+      } else {
+        setWorkerError(`Impossible de créer le sous-compte: ${err.message || err}`);
+      }
+    } finally {
+      setIsCreatingWorker(false);
     }
   };
 
@@ -986,6 +1323,53 @@ export default function App() {
                   {isLoadingSpace && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
                   <span>Entrer dans l'Espace</span>
                 </button>
+
+                {/* Séparateur élégant pour l'accès collaborateur */}
+                <div className="relative my-6 text-center">
+                  <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                    <div className="w-full border-t border-slate-200"></div>
+                  </div>
+                  <div className="relative flex justify-center">
+                    <span className="px-3 bg-white text-[10px] font-black uppercase text-slate-400 tracking-widest font-sans">
+                      Ou Accès Collaborateur / Intervenant
+                    </span>
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 space-y-3">
+                  <div className="space-y-1.5 text-left">
+                    <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest font-sans">
+                      Saisir Code Unique (7 caractères)
+                    </label>
+                    <div className="relative">
+                      <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input
+                        type="text"
+                        maxLength={7}
+                        value={workerLoginCodeInput}
+                        onChange={(e) => setWorkerLoginCodeInput(e.target.value.toUpperCase())}
+                        placeholder="Ex: DAVI581"
+                        className="w-full bg-white border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-xl py-2.5 pl-10 pr-4 text-xs font-mono font-bold tracking-widest text-slate-800 placeholder-slate-400 uppercase outline-none transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  {workerLoginError && (
+                    <div className="p-2.5 bg-rose-50 border border-rose-150 text-rose-800 rounded-xl text-[11px] font-medium font-sans text-left leading-relaxed">
+                      {workerLoginError}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleWorkerLogin}
+                    disabled={isLoadingSpace}
+                    className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-[10px] font-black tracking-widest uppercase shadow-sm cursor-pointer transition-all active:scale-98 flex items-center justify-center gap-1.5"
+                  >
+                    {isLoadingSpace && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                    <span>Connexion avec mon Code</span>
+                  </button>
+                </div>
               </form>
             ) : (
               <form onSubmit={handleRegisterSubmit} className="space-y-4">
@@ -1130,6 +1514,31 @@ export default function App() {
               </form>
             )}
 
+            <div className="text-[10px] text-slate-400 text-center leading-relaxed pt-2.5 mt-4 border-t border-slate-100">
+              En vous inscrivant ou vous connectant, vous acceptez l'{" "}
+              <button
+                type="button"
+                onClick={() => {
+                  setTermsDefaultTab("concierge");
+                  setIsTermsOpen(true);
+                }}
+                className="text-blue-600 hover:underline font-semibold cursor-pointer inline"
+              >
+                Accord Concierge "Espace"
+              </button>{" "}
+              et les{" "}
+              <button
+                type="button"
+                onClick={() => {
+                  setTermsDefaultTab("guest");
+                  setIsTermsOpen(true);
+                }}
+                className="text-blue-600 hover:underline font-semibold cursor-pointer inline"
+              >
+                Conditions Générales Voyageurs
+              </button>.
+            </div>
+
           </div>
         </main>
 
@@ -1241,8 +1650,14 @@ export default function App() {
 
               {/* Sign out / Switch owner workspace button */}
               <button
-                onClick={() => {
+                onClick={async () => {
                   localStorage.removeItem("spaceone_current_owner");
+                  localStorage.removeItem("spaceone_custom_user");
+                  try {
+                    await signOut(auth);
+                  } catch (e) {
+                    console.warn("SignOut failed or bypassed:", e);
+                  }
                   setCurrentUser(null);
                   setIsMenuOpen(false);
                 }}
@@ -1262,113 +1677,192 @@ export default function App() {
             Navigation Principale
           </div>
           
-          <button
-            onClick={() => {
-              setActiveTab("overview");
-              setIsMenuOpen(false);
-            }}
-            className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-semibold font-sans transition-all cursor-pointer ${
-              activeTab === "overview"
-                ? "bg-blue-600 text-white shadow-xs"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-            }`}
-          >
-            <CalendarIcon className={`w-4 h-4 ${activeTab === "overview" ? "text-white" : "text-slate-400"}`} />
-            <div className="flex-grow text-left">Aperçu & Calendrier</div>
-          </button>
+          {currentUser?.role !== "worker" && (
+            <button
+              onClick={() => {
+                setActiveTab("overview");
+                setIsMenuOpen(false);
+              }}
+              className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-semibold font-sans transition-all cursor-pointer ${
+                activeTab === "overview"
+                  ? "bg-blue-600 text-white shadow-xs"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+              }`}
+            >
+              <CalendarIcon className={`w-4 h-4 ${activeTab === "overview" ? "text-white" : "text-slate-400"}`} />
+              <div className="flex-grow text-left">Aperçu & Calendrier</div>
+            </button>
+          )}
 
-          <button
-            onClick={() => {
-              setActiveTab("apartments");
-              setIsMenuOpen(false);
-            }}
-            className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-semibold font-sans transition-all cursor-pointer ${
-              activeTab === "apartments"
-                ? "bg-blue-600 text-white shadow-xs"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-            }`}
-          >
-            <Building className={`w-4 h-4 ${activeTab === "apartments" ? "text-white" : "text-slate-400"}`} />
-            <div className="flex-grow text-left">Logements de SpaceOne</div>
-            <span className={`text-xs px-2 py-0.5 rounded-full ${
-              activeTab === "apartments" ? "bg-blue-500 text-white/90" : "bg-slate-100 text-slate-500 font-mono"
-            }`}>
-              {apartments.length}
-            </span>
-          </button>
-
-          <button
-            onClick={() => {
-              setActiveTab("bookings");
-              setIsMenuOpen(false);
-            }}
-            className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-semibold font-sans transition-all cursor-pointer ${
-              activeTab === "bookings"
-                ? "bg-blue-600 text-white shadow-xs"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-            }`}
-          >
-            <Briefcase className={`w-4 h-4 ${activeTab === "bookings" ? "text-white" : "text-slate-400"}`} />
-            <div className="flex-grow text-left">Réservations</div>
-            <span className={`text-xs px-2 py-0.5 rounded-full ${
-              activeTab === "bookings" ? "bg-blue-500 text-white/90" : "bg-slate-100 text-slate-500 font-mono"
-            }`}>
-              {bookings.length}
-            </span>
-          </button>
-
-          <button
-            onClick={() => {
-              setActiveTab("cleaning");
-              setIsMenuOpen(false);
-            }}
-            className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-semibold font-sans transition-all cursor-pointer ${
-              activeTab === "cleaning"
-                ? "bg-blue-600 text-white shadow-xs"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-            }`}
-          >
-            <Wrench className={`w-4 h-4 ${activeTab === "cleaning" ? "text-white" : "text-slate-400"}`} />
-            <div className="flex-grow text-left">Tâches de Ménage</div>
-            {pendingTurnoversCount > 0 && (
+          {currentUser?.role !== "worker" && (
+            <button
+              onClick={() => {
+                setActiveTab("apartments");
+                setIsMenuOpen(false);
+              }}
+              className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-semibold font-sans transition-all cursor-pointer ${
+                activeTab === "apartments"
+                  ? "bg-blue-600 text-white shadow-xs"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+              }`}
+            >
+              <Building className={`w-4 h-4 ${activeTab === "apartments" ? "text-white" : "text-slate-400"}`} />
+              <div className="flex-grow text-left">Logements de SpaceOne</div>
               <span className={`text-xs px-2 py-0.5 rounded-full ${
-                activeTab === "cleaning" ? "bg-blue-500 text-white/90" : "bg-red-50 text-red-600 font-mono"
+                activeTab === "apartments" ? "bg-blue-500 text-white/90" : "bg-slate-100 text-slate-500 font-mono"
               }`}>
-                {pendingTurnoversCount}
+                {apartments.length}
               </span>
-            )}
-          </button>
+            </button>
+          )}
 
-          <button
-            onClick={() => {
-              setActiveTab("chat");
-              setIsMenuOpen(false);
-            }}
-            className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-semibold font-sans transition-all cursor-pointer relative ${
-              activeTab === "chat"
-                ? "bg-blue-600 text-white shadow-xs"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-            }`}
-          >
-            <MessageSquare className={`w-4 h-4 ${activeTab === "chat" ? "text-white" : "text-slate-400"}`} />
-            <div className="flex-grow text-left">Messagerie AI</div>
-            {threads.length > 0 && (
+          {currentUser?.role !== "worker" && (
+            <button
+              onClick={() => {
+                setActiveTab("bookings");
+                setIsMenuOpen(false);
+              }}
+              className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-semibold font-sans transition-all cursor-pointer ${
+                activeTab === "bookings"
+                  ? "bg-blue-600 text-white shadow-xs"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+              }`}
+            >
+              <Briefcase className={`w-4 h-4 ${activeTab === "bookings" ? "text-white" : "text-slate-400"}`} />
+              <div className="flex-grow text-left">Réservations</div>
               <span className={`text-xs px-2 py-0.5 rounded-full ${
-                activeTab === "chat" ? "bg-blue-500 text-white/90" : "bg-blue-50 text-blue-600 font-mono"
+                activeTab === "bookings" ? "bg-blue-500 text-white/90" : "bg-slate-100 text-slate-500 font-mono"
               }`}>
-                {threads.length}
+                {bookings.length}
               </span>
-            )}
-            {activeTab !== "chat" && (
-              <span className="absolute top-4 right-4 w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
-            )}
-          </button>
+            </button>
+          )}
+
+          {(currentUser?.role === "worker" || currentUser?.role === "admin" || currentUser?.role === "espace" || currentUser?.isCleaningAllowed !== false) && (
+            <button
+              onClick={() => {
+                setActiveTab("cleaning");
+                setIsMenuOpen(false);
+              }}
+              className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-semibold font-sans transition-all cursor-pointer ${
+                activeTab === "cleaning"
+                  ? "bg-blue-600 text-white shadow-xs"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+              }`}
+            >
+              <Wrench className={`w-4 h-4 ${activeTab === "cleaning" ? "text-white" : "text-slate-400"}`} />
+              <div className="flex-grow text-left">
+                {currentUser?.role === "worker" ? "Mon Espace de Nettoyage" : "Tâches de Ménage"}
+              </div>
+              {currentUser?.role === "espace" && currentUser?.isCleaningAllowed === false ? (
+                <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                  activeTab === "cleaning"
+                    ? "bg-amber-500 text-white"
+                    : "bg-amber-100 text-amber-800"
+                }`}>
+                  {currentUser?.isCleaningAccessRequested ? "En cours" : "Premium"}
+                </span>
+              ) : pendingTurnoversCount > 0 ? (
+                <span className={`text-xs px-2 py-0.5 rounded-full ${
+                  activeTab === "cleaning" ? "bg-blue-500 text-white/90" : "bg-red-50 text-red-600 font-mono"
+                }`}>
+                  {pendingTurnoversCount}
+                </span>
+              ) : null}
+            </button>
+          )}
+
+          {currentUser?.role !== "worker" && (
+            <button
+              onClick={() => {
+                setActiveTab("chat");
+                setIsMenuOpen(false);
+              }}
+              className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-semibold font-sans transition-all cursor-pointer relative ${
+                activeTab === "chat"
+                  ? "bg-blue-600 text-white shadow-xs"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+              }`}
+            >
+              <MessageSquare className={`w-4 h-4 ${activeTab === "chat" ? "text-white" : "text-slate-400"}`} />
+              <div className="flex-grow text-left">Messagerie AI</div>
+              {threads.length > 0 && (
+                <span className={`text-xs px-2 py-0.5 rounded-full ${
+                  activeTab === "chat" ? "bg-blue-500 text-white/90" : "bg-blue-50 text-blue-600 font-mono"
+                }`}>
+                  {threads.length}
+                </span>
+              )}
+              {activeTab !== "chat" && (
+                <span className="absolute top-4 right-4 w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+              )}
+            </button>
+          )}
+
+          {(currentUser?.role === "espace" || currentUser?.role === "admin") && (
+            <button
+              onClick={() => {
+                setActiveTab("team");
+                setIsMenuOpen(false);
+              }}
+              className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-semibold font-sans transition-all cursor-pointer ${
+                activeTab === "team"
+                  ? "bg-blue-600 text-white shadow-xs"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+              }`}
+            >
+              <Users className={`w-4 h-4 ${activeTab === "team" ? "text-white" : "text-slate-400"}`} />
+              <div className="flex-grow text-left">Mon Équipe</div>
+              <span className={`text-xs px-2 py-0.5 rounded-full ${
+                activeTab === "team" ? "bg-blue-500 text-white/90" : "bg-slate-100 text-slate-500 font-mono"
+              }`}>
+                {allUsers.filter((u) => u.role === "worker" && (currentUser.role === "admin" || u.parentId === currentUser.id)).length}
+              </span>
+            </button>
+          )}
+
+          {currentUser?.role === "admin" && (
+            <button
+              onClick={() => {
+                setActiveTab("admin");
+                setIsMenuOpen(false);
+              }}
+              className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-semibold font-sans transition-all cursor-pointer ${
+                activeTab === "admin"
+                  ? "bg-blue-600 text-white shadow-xs"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+              }`}
+            >
+              <ShieldAlert className={`w-4 h-4 ${activeTab === "admin" ? "text-white" : "text-slate-400"}`} />
+              <div className="flex-grow text-left">Administration</div>
+            </button>
+          )}
         </nav>
 
         {/* Slide Menu Footer */}
-        <div className="p-6 border-t border-slate-100 bg-slate-50/50">
+        <div className="p-6 border-t border-slate-100 bg-slate-50/50 space-y-2.5">
+          <div className="space-y-1">
+            <button
+              onClick={() => {
+                setTermsDefaultTab("concierge");
+                setIsTermsOpen(true);
+              }}
+              className="text-[10px] text-blue-600 hover:underline font-semibold block text-left last-of-type:border-b-0 cursor-pointer"
+            >
+              • Accord Concierge "Espace"
+            </button>
+            <button
+              onClick={() => {
+                setTermsDefaultTab("guest");
+                setIsTermsOpen(true);
+              }}
+              className="text-[10px] text-blue-600 hover:underline font-semibold block text-left cursor-pointer"
+            >
+              • Politique Voyageurs & RGPD
+            </button>
+          </div>
           <p className="text-[10px] text-slate-400 font-sans">
-            © 2026 SpaceOne. Tous droits réservés. Accès sécurisé.
+            © 2026 SpaceOne SAS. Tous droits réservés. Securisé.
           </p>
         </div>
       </div>
@@ -1456,7 +1950,7 @@ export default function App() {
                     Tableau de bord de gestion et conciergerie unifiée pour votre parc de logements de prestige. Suivi en temps réel des séjours, rotations de ménage et assistants IA de messagerie.
                   </p>
                   
-                  {/* Share Space direct link */}
+                  {/* Share Space direct link & Manage Team button */}
                   <div className="mt-4 flex flex-wrap gap-2.5">
                     <button
                       type="button"
@@ -1471,6 +1965,17 @@ export default function App() {
                       <Copy className="w-3.5 h-3.5" />
                       <span>{copiedLink ? "Lien copié ! ✓" : "Partager l'Espace aux Clients 🔗"}</span>
                     </button>
+
+                    {(currentUser?.role === "espace" || currentUser?.role === "admin") && (
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab("team")}
+                        className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/15 text-white font-sans font-bold text-[10px] uppercase tracking-wider px-4 py-2 rounded-xl transition-all cursor-pointer shadow-md border border-white/10 active:scale-97"
+                      >
+                        <Users className="w-3.5 h-3.5 text-blue-400" />
+                        <span>Gérer mon Équipe (Collaborateurs) 👥</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -1616,13 +2121,22 @@ export default function App() {
         )}
 
         {activeTab === "cleaning" && (
-          <CleaningTab
-            cleaningTasks={cleaningTasks}
-            apartments={apartments}
-            onAddCleaningTask={handleAddCleaningTask}
-            onUpdateCleaningTask={handleUpdateCleaningTask}
-            onDeleteCleaningTask={handleDeleteCleaningTask}
-          />
+          currentUser?.role === "espace" && currentUser?.isCleaningAllowed === false ? (
+            <CleaningUpgradeRequestView
+              currentUser={currentUser}
+              onSendRequest={handleRequestCleaningAccess}
+            />
+          ) : (
+            <CleaningTab
+              cleaningTasks={cleaningTasks}
+              apartments={apartments}
+              onAddCleaningTask={handleAddCleaningTask}
+              onUpdateCleaningTask={handleUpdateCleaningTask}
+              onDeleteCleaningTask={handleDeleteCleaningTask}
+              workers={allUsers.filter((u) => u.role === "worker")}
+              currentUser={currentUser}
+            />
+          )
         )}
 
         {activeTab === "chat" && (
@@ -1631,6 +2145,700 @@ export default function App() {
             bookings={bookings}
             onAddMessage={handleAddMessage}
           />
+        )}
+
+        {activeTab === "team" && (
+          <div className="space-y-6 animate-fade-in">
+            <div>
+              <h2 className="text-2xl font-semibold tracking-tight text-slate-900 font-sans">
+                Mon Équipe & Collaborateurs
+              </h2>
+              <p className="text-sm text-slate-500 font-sans mt-0.5">
+                Gérez les sous-comptes pour vos agents de nettoyage et techniciens partenaires. Suivez l'avancée de leurs tâches de ménage en temps réel.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+              {/* Formulaire de création */}
+              <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-xs space-y-4">
+                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider font-sans border-b border-slate-100 pb-2">
+                  Enregistrer un Collaborateur
+                </h3>
+                
+                <form onSubmit={handleCreateWorkerSubmit} className="space-y-4">
+                  {workerError && (
+                    <div className="p-3 bg-red-50 text-red-600 rounded-xl text-xs font-semibold leading-relaxed border border-red-150">
+                      {workerError}
+                    </div>
+                  )}
+                  {workerSuccess && (
+                    <div className="p-3 bg-emerald-50 text-emerald-700 rounded-xl text-xs font-semibold leading-relaxed border border-emerald-150">
+                      {workerSuccess}
+                    </div>
+                  )}
+
+                   <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 font-sans">
+                        Prénom *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ex: David"
+                        value={workerFirstName}
+                        onChange={(e) => setWorkerFirstName(e.target.value)}
+                        className="w-full text-sm text-slate-800 bg-white border border-slate-200 rounded-lg px-3 py-2 focus:outline-hidden focus:border-slate-400 font-sans"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 font-sans">
+                        Nom de famille *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ex: Berger"
+                        value={workerLastName}
+                        onChange={(e) => setWorkerLastName(e.target.value)}
+                        className="w-full text-sm text-slate-800 bg-white border border-slate-200 rounded-lg px-3 py-2 focus:outline-hidden focus:border-slate-400 font-sans"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 font-sans">
+                      Numéro de contact (Téléphone) *
+                    </label>
+                    <input
+                      type="tel"
+                      required
+                      placeholder="Ex: +33 6 12 34 56 78"
+                      value={workerPhone}
+                      onChange={(e) => setWorkerPhone(e.target.value)}
+                      className="w-full text-sm text-slate-800 bg-white border border-slate-200 rounded-lg px-3 py-2 focus:outline-hidden focus:border-slate-400 font-sans"
+                    />
+                  </div>
+
+                  {/* Live generated login code preview */}
+                  {(workerFirstName || workerLastName) && (
+                    <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl space-y-1">
+                      <span className="block text-[9px] font-black uppercase text-blue-500 tracking-wider font-sans">
+                        Aperçu du code de connexion (7 caractères)
+                      </span>
+                      <p className="text-sm font-extrabold font-mono text-blue-950 uppercase tracking-widest">
+                        {(() => {
+                          const f = workerFirstName.replace(/[^a-zA-Z]/g, "").toLowerCase();
+                          const l = workerLastName.replace(/[^a-zA-Z]/g, "").toLowerCase();
+                          const combo = f + l;
+                          let px = combo.substring(0, 4);
+                          if (px.length < 3) px = (px + "col").substring(0, 3);
+                          const rem = 7 - px.length;
+                          return px + "•••••••".substring(0, rem);
+                        })()}
+                      </p>
+                      <span className="block text-[9px] text-blue-400 font-sans leading-tight">
+                        Uniquement d'après leur nom et des chiffres générés de manière unique. Aucun mot de passe requis.
+                      </span>
+                    </div>
+                  )}
+
+                  {currentUser.role === "admin" && (
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 font-sans">
+                        Rattacher à la Conciergerie *
+                      </label>
+                      <select
+                        required
+                        value={newWorkerParentId}
+                        onChange={(e) => setNewWorkerParentId(e.target.value)}
+                        className="w-full text-sm text-slate-800 bg-white border border-slate-200 rounded-lg px-3 py-2 focus:outline-hidden focus:border-slate-400 font-sans cursor-pointer"
+                      >
+                        <option value="">-- Choisir une conciergerie --</option>
+                        {allUsers
+                          .filter((u) => u.role === "espace")
+                          .map((u) => (
+                            <option key={u.id} value={u.id}>
+                              {u.businessName} ({u.fullName})
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={isCreatingWorker}
+                    className="w-full text-center bg-slate-900 hover:bg-slate-800 text-white rounded-lg py-2.5 text-xs font-bold font-sans uppercase tracking-wider cursor-pointer shadow-xs transition-colors disabled:opacity-50"
+                  >
+                    {isCreatingWorker ? "Création en cours..." : "Créer le sous-compte"}
+                  </button>
+                </form>
+              </div>
+
+              {/* Liste des collaborateurs */}
+              <div className="lg:col-span-2 space-y-4">
+                <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-xs">
+                  <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider font-sans border-b border-slate-100 pb-2 mb-4">
+                    Collaborateurs Enregistrés ({allUsers.filter(u => u.role === "worker" && (currentUser.role === "admin" || u.parentId === currentUser.id)).length})
+                  </h3>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {allUsers
+                      .filter((u) => u.role === "worker" && (currentUser.role === "admin" || u.parentId === currentUser.id))
+                      .map((worker) => {
+                        const workerTasks = cleaningTasks.filter((t) => t.cleanerId === worker.id);
+                        const assignedPending = workerTasks.filter((t) => t.status !== "completed").length;
+
+                        return (
+                          <div key={worker.id} className="p-4 rounded-xl border border-slate-100 bg-slate-50/50 flex flex-col justify-between space-y-3">
+                            <div className="flex items-start gap-3">
+                              <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-slate-700 to-slate-900 text-white flex items-center justify-center font-bold text-xs uppercase shadow-xs shrink-0 font-sans">
+                                {worker.fullName ? worker.fullName.split(" ").map(n => n[0]).join("") : "T"}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <h4 className="text-xs font-bold text-slate-800 truncate">{worker.fullName}</h4>
+                                <p className="text-[10px] text-slate-400 font-mono truncate">{worker.email}</p>
+                                {currentUser.role === "admin" && (
+                                  <p className="text-[9px] text-blue-600 font-semibold uppercase tracking-wider truncate mt-0.5">
+                                    Conciergerie : {worker.businessName}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="p-2.5 bg-white rounded-lg border border-slate-100 space-y-1.5 font-sans">
+                              <div className="flex items-center justify-between text-[10px]">
+                                <span className="text-slate-400">Tâches assignées</span>
+                                <span className="font-bold text-slate-700 font-mono">{workerTasks.length} total</span>
+                              </div>
+                              <div className="flex items-center justify-between text-[10px]">
+                                <span className="text-slate-400">En cours / En attente</span>
+                                <span className="font-extrabold text-blue-600 font-mono">{assignedPending} en cours</span>
+                              </div>
+                              <div className="flex items-center justify-between text-[10px] pt-1 border-t border-slate-50">
+                                <span className="text-slate-400">Téléphone</span>
+                                <span className="font-mono text-slate-800 font-semibold">{worker.phone || "Non renseigné"}</span>
+                              </div>
+                              <div className="flex items-center justify-between text-[10px] pt-1">
+                                <span className="text-slate-400">Code de Connexion</span>
+                                <span className="font-mono font-black bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded text-[10px] select-all animate-pulse tracking-wider">
+                                  {(worker.loginCode || "").toUpperCase() || "N/A"}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+                              <span className="text-[9px] uppercase tracking-wider font-extrabold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-sm">
+                                Compte Actif
+                              </span>
+                              <button
+                                onClick={() => {
+                                  if (confirm(`Êtes-vous certain de vouloir supprimer le sous-compte de ${worker.fullName} ?`)) {
+                                    handleDeleteUser(worker.id);
+                                  }
+                                }}
+                                className="text-[10px] font-bold text-red-500 hover:text-red-700 font-sans cursor-pointer transition-colors"
+                              >
+                                Supprimer le sous-compte
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                    {allUsers.filter(u => u.role === "worker" && (currentUser.role === "admin" || u.parentId === currentUser.id)).length === 0 && (
+                      <div className="col-span-full py-8 text-center text-slate-400 text-xs font-sans">
+                        Aucun collaborateur enregistré pour le moment.
+                        <br />
+                        Utilisez le formulaire ci-contre pour créer votre premier compte de ménage.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "admin" && currentUser.role === "admin" && (
+          <div className="space-y-6 animate-fade-in mb-8">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-semibold tracking-tight text-slate-900 font-sans">
+                  Portail d'Administration Global
+                </h2>
+                <p className="text-sm text-slate-500 font-sans mt-0.5">
+                  Gérez les validations d'accès business, surveillez les flux de réservations de luxe et pilotez les équipes d'entretien.
+                </p>
+              </div>
+              <div className="text-[10px] font-bold uppercase tracking-wider bg-slate-900 text-white px-3 py-1.5 rounded-xl font-sans shrink-0 block shadow-xs border border-white/5">
+                Autorité Administration active
+              </div>
+            </div>
+
+            {/* Sélecteur de sous-onglet administration */}
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl max-w-lg shadow-inner">
+              <button
+                onClick={() => setAdminSubTab("users")}
+                className={`flex-1 text-center py-2 text-xs font-bold font-sans rounded-lg tracking-wide uppercase transition-all cursor-pointer ${
+                  adminSubTab === "users" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                Validation Concierges ({allUsers.filter(u => u.role === "espace").length})
+              </button>
+              <button
+                onClick={() => setAdminSubTab("bookings")}
+                className={`flex-1 text-center py-2 text-xs font-bold font-sans rounded-lg tracking-wide uppercase transition-all cursor-pointer ${
+                  adminSubTab === "bookings" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                Réservations Concierges ({bookings.length})
+              </button>
+              <button
+                onClick={() => setAdminSubTab("workers")}
+                className={`flex-1 text-center py-2 text-xs font-bold font-sans rounded-lg tracking-wide uppercase transition-all cursor-pointer ${
+                  adminSubTab === "workers" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                Sous-comptes Équipes ({allUsers.filter(u => u.role === "worker").length})
+              </button>
+            </div>
+
+            {/* Contenu Sous-onglets */}
+            {adminSubTab === "users" && (
+              <div className="space-y-6">
+                {/* Demandes de ménage actives */}
+                {allUsers.some((u) => u.role === "espace" && u.isCleaningAccessRequested) && (
+                  <div className="bg-gradient-to-r from-amber-50/90 to-orange-50/40 border border-amber-200 rounded-2xl p-5 space-y-4 shadow-xs animate-fade-in">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center">
+                        <Wrench className="w-4 h-4 text-amber-600 animate-bounce" />
+                      </div>
+                      <div>
+                        <h4 className="font-extrabold text-slate-800 text-xs uppercase tracking-widest font-sans">
+                          Demandes Actives d'Accès Tâches de Ménage
+                        </h4>
+                        <p className="text-[10px] text-slate-500 font-sans mt-0.5">
+                          Ces partenaires Concierges demandent l'activation du module complet de turnovers de ménage.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3.5">
+                      {allUsers
+                        .filter((u) => u.role === "espace" && u.isCleaningAccessRequested)
+                        .map((reqUser) => {
+                          const reqDate = reqUser.cleaningAccessRequestedAt
+                            ? new Date(reqUser.cleaningAccessRequestedAt).toLocaleString("fr-FR", {
+                                day: "numeric",
+                                month: "short",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            : "Date-Inconnue";
+                          return (
+                            <div
+                              key={reqUser.id}
+                              className="bg-white border border-amber-150/70 rounded-xl p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-2xs"
+                            >
+                              <div className="space-y-1.5 text-xs text-slate-600 font-sans flex-grow">
+                                <div className="text-sm font-black text-slate-900 flex flex-wrap items-center gap-2">
+                                  <span>{reqUser.businessName}</span>
+                                  <span className="text-[9px] bg-amber-100/60 text-amber-800 border border-amber-150 px-2 py-0.5 rounded-full font-bold">
+                                    Demandé le {reqDate}
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-0.5 mt-0.5">
+                                  <div>
+                                    Gérant / Directeur :{" "}
+                                    <span className="font-semibold text-slate-850">
+                                      {reqUser.fullName}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    Email de liaison :{" "}
+                                    <span className="font-semibold text-slate-850 font-mono">
+                                      {reqUser.email}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="p-2.5 bg-slate-50 border border-slate-100 text-[10.5px] leading-relaxed rounded-lg text-slate-500 mt-1.5">
+                                  🛡️ <strong>Avis d'Administration :</strong> L'acceptation du module passera le
+                                  compte de cet utilisateur à <strong>10% commission globale</strong> au lieu de 8% standard. 
+                                  Contactez le gérant par mail pour modifier le contrat avant d'autoriser.
+                                </div>
+                              </div>
+                              <div className="shrink-0 w-full md:w-auto">
+                                <button
+                                  onClick={() => handleToggleUserCleaning(reqUser)}
+                                  className="w-full md:w-auto px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider cursor-pointer shadow-xs transition-all active:scale-98"
+                                >
+                                  Activer & Valider (Tarif 10%)
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-xs space-y-4">
+                  <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider font-sans border-b border-slate-100 pb-2">
+                    Validation & Droits des Établissements Concierges
+                  </h3>
+                  
+                  <div className="overflow-x-auto min-w-full">
+                    <table className="min-w-full divide-y divide-slate-100 font-sans">
+                      <thead>
+                        <tr className="text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50/50">
+                          <th className="px-4 py-3">Établissement</th>
+                          <th className="px-4 py-3">Gérant / Contact</th>
+                          <th className="px-4 py-3">Inscrit le</th>
+                          <th className="px-4 py-3 text-center">Accès Ménages (Tâches)</th>
+                          <th className="px-4 py-3 text-center">Statut Business</th>
+                          <th className="px-4 py-3 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-xs">
+                        {allUsers
+                          .filter((u) => u.role === "espace")
+                          .map((user) => (
+                            <tr key={user.id} className="hover:bg-slate-50/40">
+                              <td className="px-4 py-3.5 font-bold text-slate-800">
+                                {user.businessName}
+                              </td>
+                              <td className="px-4 py-3.5">
+                                <div className="font-semibold">{user.fullName}</div>
+                                <div className="text-[10px] text-slate-400 font-mono">{user.email}</div>
+                              </td>
+                              <td className="px-4 py-3.5 text-slate-500 font-mono">
+                                {user.createdAt ? user.createdAt.substring(0, 10) : "Par défaut"}
+                              </td>
+                              <td className="px-4 py-3.5 text-center">
+                                <div className="flex flex-col items-center gap-1">
+                                  <button
+                                    onClick={() => handleToggleUserCleaning(user)}
+                                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider cursor-pointer border ${
+                                      user.isCleaningAllowed !== false
+                                        ? "bg-emerald-50 text-emerald-800 border-emerald-150 hover:bg-emerald-100"
+                                        : "bg-amber-50 text-amber-800 border-amber-150 hover:bg-amber-100"
+                                    }`}
+                                  >
+                                    {user.isCleaningAllowed !== false ? "Autorisé" : "Interdit"}
+                                  </button>
+                                  {user.isCleaningAccessRequested && (
+                                    <span className="text-[8px] text-amber-700 bg-amber-50 border border-amber-150 rounded px-1 py-0.5 animate-pulse uppercase tracking-wider font-extrabold">
+                                      Demande: Tarif 10%
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                            <td className="px-4 py-3.5 text-center">
+                              <span className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${
+                                user.approved
+                                  ? "bg-blue-50 text-blue-700"
+                                  : "bg-red-50 text-red-650 animate-pulse"
+                              }`}>
+                                {user.approved ? "Validé" : "En cours..."}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3.5 text-right space-x-1">
+                              <button
+                                onClick={() => handleToggleUserApproval(user)}
+                                className={`px-3 py-1 rounded text-[10px] font-bold cursor-pointer transition-colors ${
+                                  user.approved
+                                    ? "bg-slate-100 hover:bg-slate-200 text-slate-600"
+                                    : "bg-blue-600 hover:bg-blue-700 text-white"
+                                }`}
+                              >
+                                {user.approved ? "Invalider" : "Valider"}
+                              </button>
+                              
+                              <button
+                                onClick={() => handleToggleUserSuspension(user)}
+                                className={`px-3 py-1 rounded text-[10px] font-bold cursor-pointer transition-colors ${
+                                  user.suspended
+                                    ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                                    : "bg-rose-50 hover:bg-rose-100 text-rose-600"
+                                }`}
+                              >
+                                {user.suspended ? "Activer" : "Suspendre"}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+            {adminSubTab === "bookings" && (
+              <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-xs space-y-4">
+                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider font-sans border-b border-slate-100 pb-2">
+                  Suivi des Réservations Prestiges
+                </h3>
+                
+                <div className="overflow-x-auto min-w-full">
+                  <table className="min-w-full divide-y divide-slate-100 font-sans">
+                    <thead>
+                      <tr className="text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50/50">
+                        <th className="px-4 py-3">Hébergement</th>
+                        <th className="px-4 py-3">Locataire</th>
+                        <th className="px-4 py-3">Hôte (Concierge d'origine)</th>
+                        <th className="px-4 py-3">Dates de séjour</th>
+                        <th className="px-4 py-3 text-center">Montant Global</th>
+                        <th className="px-4 py-3 text-center">Statut Réservation</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-xs">
+                      {bookings.map((booking) => {
+                        const apt = apartments.find((a) => a.id === booking.apartmentId);
+                        const conciergeUser = allUsers.find((u) => u.id === (apt?.ownerId || booking.hostId));
+
+                        return (
+                          <tr key={booking.id} className="hover:bg-slate-50/40">
+                            <td className="px-4 py-3.5 font-bold text-slate-800">
+                              {apt ? apt.name : "Hébergement"}
+                            </td>
+                            <td className="px-4 py-3.5 font-semibold text-slate-700">
+                              {booking.guestName}
+                            </td>
+                            <td className="px-4 py-3.5">
+                              {conciergeUser ? (
+                                <div>
+                                  <div className="font-bold text-slate-700">{conciergeUser.businessName}</div>
+                                  <div className="text-[9px] text-slate-400 font-sans">{conciergeUser.fullName}</div>
+                                </div>
+                              ) : (
+                                <span className="text-slate-400">Inconnu</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3.5 font-mono text-slate-500">
+                              Du {booking.startDate} Au {booking.endDate}
+                            </td>
+                            <td className="px-4 py-3.5 text-center font-bold font-mono text-emerald-600">
+                              {(booking.totalAmount || 0).toLocaleString("fr-FR")} €
+                            </td>
+                            <td className="px-4 py-3.5 text-center">
+                              <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                                booking.status === "confirmed"
+                                  ? "bg-slate-900 text-white"
+                                  : booking.status === "completed"
+                                  ? "bg-emerald-50 text-emerald-800"
+                                  : "bg-red-50 text-red-650"
+                              }`}>
+                                {booking.status === "confirmed" ? "Payé / Confirmé" : booking.status === "completed" ? "Terminé" : "Annulé"}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+
+                      {bookings.length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="text-center py-8 text-slate-400">
+                            Aucune réservation n'a encore été enregistrée dans le système.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {adminSubTab === "workers" && (
+              <div className="space-y-6">
+                {/* Re-use Team layout for consolidated worker creation as admin! */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+                  {/* Form */}
+                  <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-xs space-y-4">
+                    <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider font-sans border-b border-slate-100 pb-2">
+                      Créer un sous-compte
+                    </h3>
+                    
+                    <form onSubmit={handleCreateWorkerSubmit} className="space-y-4 font-sans">
+                      {workerError && (
+                        <div className="p-3 bg-red-50 text-red-600 rounded-xl text-xs font-semibold leading-relaxed border border-red-150">
+                          {workerError}
+                        </div>
+                      )}
+                      {workerSuccess && (
+                        <div className="p-3 bg-emerald-50 text-emerald-700 rounded-xl text-xs font-semibold leading-relaxed border border-emerald-150">
+                          {workerSuccess}
+                        </div>
+                      )}
+
+                       <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 font-sans">
+                            Prénom *
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="Ex: David"
+                            value={workerFirstName}
+                            onChange={(e) => setWorkerFirstName(e.target.value)}
+                            className="w-full text-sm text-slate-800 bg-white border border-slate-200 rounded-lg px-3 py-2 focus:outline-hidden focus:border-slate-400 font-sans"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 font-sans">
+                            Nom de famille *
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="Ex: Berger"
+                            value={workerLastName}
+                            onChange={(e) => setWorkerLastName(e.target.value)}
+                            className="w-full text-sm text-slate-800 bg-white border border-slate-200 rounded-lg px-3 py-2 focus:outline-hidden focus:border-slate-400 font-sans"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 font-sans">
+                          Numéro de contact (Téléphone) *
+                        </label>
+                        <input
+                          type="tel"
+                          required
+                          placeholder="Ex: +33 6 12 34 56 78"
+                          value={workerPhone}
+                          onChange={(e) => setWorkerPhone(e.target.value)}
+                          className="w-full text-sm text-slate-800 bg-white border border-slate-200 rounded-lg px-3 py-2 focus:outline-hidden focus:border-slate-400 font-sans"
+                        />
+                      </div>
+
+                      {/* Live generated login code preview */}
+                      {(workerFirstName || workerLastName) && (
+                        <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl space-y-1">
+                          <span className="block text-[9px] font-black uppercase text-blue-500 tracking-wider font-sans">
+                            Aperçu du code de connexion (7 caractères)
+                          </span>
+                          <p className="text-sm font-extrabold font-mono text-blue-950 uppercase tracking-widest">
+                            {(() => {
+                              const f = workerFirstName.replace(/[^a-zA-Z]/g, "").toLowerCase();
+                              const l = workerLastName.replace(/[^a-zA-Z]/g, "").toLowerCase();
+                              const combo = f + l;
+                              let px = combo.substring(0, 4);
+                              if (px.length < 3) px = (px + "col").substring(0, 3);
+                              const rem = 7 - px.length;
+                              return px + "•••••••".substring(0, rem);
+                            })()}
+                          </p>
+                          <span className="block text-[9px] text-blue-400 font-sans leading-tight">
+                            Uniquement d'après leur nom et des chiffres générés de manière unique. Aucun mot de passe requis.
+                          </span>
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 font-sans">
+                          Rattacher à la Conciergerie *
+                        </label>
+                        <select
+                          required
+                          value={newWorkerParentId}
+                          onChange={(e) => setNewWorkerParentId(e.target.value)}
+                          className="w-full text-sm text-slate-800 bg-white border border-slate-200 rounded-lg px-3 py-2 focus:outline-hidden focus:border-slate-400 font-sans cursor-pointer"
+                        >
+                          <option value="">-- Choisir une conciergerie --</option>
+                          {allUsers
+                            .filter((u) => u.role === "espace")
+                            .map((u) => (
+                              <option key={u.id} value={u.id}>
+                                {u.businessName} ({u.fullName})
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={isCreatingWorker}
+                        className="w-full text-center bg-slate-900 hover:bg-slate-800 text-white rounded-lg py-2.5 text-xs font-bold font-sans uppercase tracking-wider cursor-pointer shadow-xs transition-colors disabled:opacity-50"
+                      >
+                        {isCreatingWorker ? "Création en cours..." : "Créer le sous-compte"}
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Right side list */}
+                  <div className="lg:col-span-2 bg-white border border-slate-100 rounded-2xl p-5 shadow-xs">
+                    <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider font-sans border-b border-slate-100 pb-2 mb-4">
+                      Tous les Techniciens & Travailleurs de la Plateforme ({allUsers.filter(u => u.role === "worker").length})
+                    </h3>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {allUsers
+                        .filter((u) => u.role === "worker")
+                        .map((worker) => {
+                          const parent = allUsers.find((p) => p.id === worker.parentId);
+                          return (
+                            <div key={worker.id} className="p-4 rounded-xl border border-slate-100 bg-slate-50/50 flex flex-col justify-between space-y-3 font-sans">
+                              <div className="flex items-start gap-3">
+                                <div className="w-9 h-9 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs uppercase shadow-xs shrink-0 font-sans">
+                                  {worker.fullName ? worker.fullName.split(" ").map(n => n[0]).join("") : "T"}
+                                </div>
+                                <div className="min-w-0 flex-1 text-left">
+                                  <h4 className="text-xs font-bold text-slate-800 truncate">{worker.fullName}</h4>
+                                  <p className="text-[10px] text-slate-400 font-mono truncate">{worker.email}</p>
+                                  <p className="text-[9px] text-blue-600 font-bold uppercase tracking-wider truncate mt-0.5">
+                                    Conciergerie : {worker.businessName || parent?.businessName || "Espace Premium"}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="p-2.5 bg-white rounded-lg border border-slate-100 text-[10px] space-y-1">
+                                <div className="flex justify-between">
+                                  <span className="text-slate-400">Identifiant d'accès</span>
+                                  <span className="font-mono text-slate-600 font-bold text-[9px]">{worker.email}</span>
+                                </div>
+                                <div className="flex justify-between pt-1 border-t border-slate-50">
+                                  <span className="text-slate-400">Mot de passe fourni</span>
+                                  <span className="font-mono text-slate-700 bg-slate-150 px-1 py-0.5 rounded text-[8px] font-bold select-all">
+                                    {worker.password || "Standard"}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+                                <span className="text-[9px] uppercase tracking-wider font-extrabold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-sm">
+                                  Accès actif
+                                </span>
+                                <button
+                                  onClick={() => {
+                                    if (confirm(`Voulez-vous supprimer définitivement le sous-compte de ${worker.fullName} ?`)) {
+                                      handleDeleteUser(worker.id);
+                                    }
+                                  }}
+                                  className="text-[10px] font-bold text-red-500 hover:text-red-700 font-sans cursor-pointer transition-colors"
+                                >
+                                  Supprimer le sous-compte
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                      {allUsers.filter(u => u.role === "worker").length === 0 && (
+                        <div className="col-span-full py-8 text-center text-slate-400 text-xs">
+                          Aucun sous-compte travailleur n'a été créé sur la plateforme.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         )}
       </main>
 
@@ -1642,6 +2850,12 @@ export default function App() {
           onProfileUpdated={(updatedUser) => setCurrentUser(updatedUser)}
         />
       )}
+
+      <TermsModal
+        isOpen={isTermsOpen}
+        onClose={() => setIsTermsOpen(false)}
+        defaultTab={termsDefaultTab}
+      />
     </div>
   );
 }

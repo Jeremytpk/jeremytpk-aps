@@ -38,6 +38,7 @@ export interface CleaningTask {
   date: string; // YYYY-MM-DD (typically check-out date of a booking)
   status: "pending" | "in_progress" | "completed";
   cleanerName: string;
+  cleanerId?: string; // Links to the worker user's UID
   notes: string;
   checklist: { id: string; text: string; done: boolean }[];
 }
@@ -66,6 +67,14 @@ export interface HomeOwner {
   businessName: string;
   avatarUrl?: string;
   createdAt: string;
-  role: "espace" | "admin" | "personal";
+  role: "espace" | "admin" | "personal" | "worker";
   suspended?: boolean;
+  approved?: boolean;
+  isCleaningAllowed?: boolean;
+  parentId?: string; // links to the concierge ownerId
+  password?: string; // for custom auth fallback
+  isCleaningAccessRequested?: boolean;
+  cleaningAccessRequestedAt?: string;
+  phone?: string;
+  loginCode?: string;
 }

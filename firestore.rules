@@ -37,14 +37,13 @@ service cloud.firestore {
 
     // --- Users Collection ---
     match /users/{userId} {
-      allow get: if true;
-      allow list: if isAdmin();
+      allow get, list: if true;
       
       allow create: if isSignedIn() 
         && request.auth.uid == userId 
         && request.resource.data.id == userId
         && (
-          request.resource.data.role == 'espace' || request.resource.data.role == 'personal' || (
+          request.resource.data.role == 'espace' || request.resource.data.role == 'personal' || request.resource.data.role == 'worker' || (
             request.resource.data.role == 'admin' && (
               (request.auth.token.email != null && (request.auth.token.email.lower() == 'admin@spaceone.com' || request.auth.token.email.lower() == 'jeremytopaka@gmail.com')) ||
               (request.resource.data.email is string && (request.resource.data.email.lower() == 'admin@spaceone.com' || request.resource.data.email.lower() == 'jeremytopaka@gmail.com'))
@@ -69,10 +68,29 @@ service cloud.firestore {
           && request.resource.data.fullName.size() <= 200
           && request.resource.data.businessName is string
           && request.resource.data.businessName.size() <= 200
+          && (
+            !('isCleaningAllowed' in resource.data)
+            || request.resource.data.isCleaningAllowed == resource.data.isCleaningAllowed
+          )
+          && (
+            !('isCleaningAccessRequested' in request.resource.data)
+            || request.resource.data.isCleaningAccessRequested is bool
+          )
+          && (
+            !('cleaningAccessRequestedAt' in request.resource.data)
+            || request.resource.data.cleaningAccessRequestedAt is string
+          )
+        ) || (
+          resource.data.parentId == request.auth.uid
+          && isNotSuspended()
+          && request.resource.data.id == resource.data.id
+          && request.resource.data.email == resource.data.email
+          && request.resource.data.fullName is string
+          && request.resource.data.fullName.size() <= 200
         )
       );
 
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || (resource.data.parentId == request.auth.uid);
     }
 
     // --- Apartments Collection ---
@@ -120,39 +138,20 @@ service cloud.firestore {
 
     // --- CleaningTasks Collection ---
     match /cleaningTasks/{cleaningTaskId} {
-      allow get: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
-      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow get, list: if true;
       
       allow create: if isSignedIn() && isNotSuspended()
-        && request.resource.data.ownerId == request.auth.uid;
+        && (request.resource.data.ownerId == request.auth.uid || isAdmin());
 
-      allow update: if isSignedIn() && (
-        isAdmin() || (
-          isNotSuspended()
-          && resource.data.ownerId == request.auth.uid
-          && request.resource.data.ownerId == request.auth.uid
-        )
-      );
+      allow update: if true;
 
       allow delete: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
     }
 
     // --- Threads Collection ---
     match /threads/{threadId} {
-      allow get: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
-      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
-      
-      allow create: if request.resource.data.ownerId is string;
-
-      allow update: if isSignedIn() && (
-        isAdmin() || (
-          isNotSuspended()
-          && resource.data.ownerId == request.auth.uid
-          && request.resource.data.ownerId == request.auth.uid
-        )
-      );
-
-      allow delete: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow get, list: if true;
+      allow create, update, delete: if true;
     }
 
   }

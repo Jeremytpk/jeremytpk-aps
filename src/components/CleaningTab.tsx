@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { CleaningTask, Apartment } from "../types";
+import { CleaningTask, Apartment, HomeOwner } from "../types";
 import { CheckSquare, Square, CheckCircle2, AlertCircle, Plus, Trash2, Edit, X, Calendar, User, Clock, ClipboardList } from "lucide-react";
 import { formatDateToFR } from "../utils";
 
@@ -9,6 +9,8 @@ interface CleaningTabProps {
   onAddCleaningTask: (task: CleaningTask) => void;
   onUpdateCleaningTask: (task: CleaningTask) => void;
   onDeleteCleaningTask: (id: string) => void;
+  workers?: HomeOwner[];
+  currentUser?: HomeOwner | null;
 }
 
 export default function CleaningTab({
@@ -17,6 +19,8 @@ export default function CleaningTab({
   onAddCleaningTask,
   onUpdateCleaningTask,
   onDeleteCleaningTask,
+  workers = [],
+  currentUser = null,
 }: CleaningTabProps) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<CleaningTask | null>(null);
@@ -29,6 +33,7 @@ export default function CleaningTab({
   const [apartmentId, setApartmentId] = useState("");
   const [date, setDate] = useState("");
   const [cleanerName, setCleanerName] = useState("");
+  const [cleanerId, setCleanerId] = useState("");
   const [notes, setNotes] = useState("");
   const [checklistItemsText, setChecklistItemsText] = useState(""); // newline-separated
 
@@ -36,6 +41,7 @@ export default function CleaningTab({
     setApartmentId(apartments[0]?.id || "");
     setDate("");
     setCleanerName("");
+    setCleanerId("");
     setNotes("");
     setChecklistItemsText(
       "Retirer les draps et laver les serviettes\nDésinfecter la cuisine et le réfrigérateur\nPasser l'aspirateur et laver les sols\nRéapprovisionner les produits d'accueil et le café\nDésinfecter la salle de bain"
@@ -44,7 +50,7 @@ export default function CleaningTab({
 
   const handleAddSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!apartmentId || !date || !cleanerName) return;
+    if (!apartmentId || !date || (!cleanerName && !cleanerId)) return;
 
     const items = checklistItemsText
       .split("\n")
@@ -62,7 +68,8 @@ export default function CleaningTab({
       bookingId: "", // standalone check-out or routine maintenance
       date,
       status: "pending",
-      cleanerName,
+      cleanerName: cleanerName || "Technicien SpaceOne",
+      cleanerId: cleanerId || "",
       notes,
       checklist: items,
     };
@@ -115,6 +122,9 @@ export default function CleaningTab({
   };
 
   const filteredTasks = cleaningTasks.filter((t) => {
+    if (currentUser?.role === "worker" && t.cleanerId !== currentUser.id) {
+      return false;
+    }
     const matchesStatus = statusFilter === "all" || t.status === statusFilter;
     const matchesApartment = apartmentFilter === "all" || t.apartmentId === apartmentFilter;
     return matchesStatus && matchesApartment;
@@ -126,13 +136,20 @@ export default function CleaningTab({
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight text-slate-900 font-sans">
-            Plannings de Nettoyage
+            {currentUser?.role === "worker" ? "Mon Espace de Travail" : "Plannings de Nettoyage"}
           </h2>
           <p className="text-sm text-slate-500 font-sans mt-0.5">
-            Coordonnez le personnel d'entretien, gérez les fiches de nettoyage de départ et suivez la propreté en temps réel.
+            {currentUser?.role === "worker" 
+              ? "Consultez vos interventions assignées, validez votre check-list en temps réel et complétez vos rapports d'entretien."
+              : "Coordonnez le personnel d'entretien, gérez les fiches de nettoyage de départ et suivez la propreté en temps réel."}
           </p>
         </div>
-        {apartments.length === 0 ? (
+        {currentUser?.role === "worker" ? (
+          <div className="text-xs font-semibold text-emerald-800 bg-emerald-50 px-3.5 py-2 border border-emerald-100 rounded-xl font-sans flex items-center gap-1.5 shadow-xs">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+            Mode Technicien d'Entretien Connecté
+          </div>
+        ) : apartments.length === 0 ? (
           <div className="text-xs font-semibold text-amber-600 bg-amber-50/55 px-3.5 py-2 border border-amber-100/70 rounded-xl font-sans animate-fade-in">
             ⚠️ Créez d'abord un logement pour planifier un ménage
           </div>
@@ -278,49 +295,51 @@ export default function CleaningTab({
               </div>
 
               {/* Barre de contrôle d'édition/suppression */}
-              <div className="flex items-center justify-end gap-1.5 pt-3 border-t border-slate-50">
-                <button
-                  id={`btn-edit-clean-${task.id}`}
-                  onClick={() => {
-                    setEditingTask({ ...task });
-                  }}
-                  className="inline-flex items-center gap-1 px-3 py-1 text-xs text-slate-600 hover:text-slate-950 hover:bg-slate-50 rounded-md border border-slate-100 font-sans cursor-pointer"
-                >
-                  <Edit className="w-3.5 h-3.5" />
-                  Modifier personnel/notes
-                </button>
-                {deleteConfirmId === task.id ? (
-                  <div className="flex items-center gap-1.5 bg-rose-50 px-2 py-1 rounded-md border border-rose-100 animate-pulse">
-                    <span className="text-[10px] font-bold text-rose-600 font-sans">Supprimer ?</span>
-                    <button
-                      onClick={() => {
-                        onDeleteCleaningTask(task.id);
-                        setDeleteConfirmId(null);
-                      }}
-                      className="px-2 py-0.5 bg-rose-600 text-white rounded text-[10px] font-bold hover:bg-rose-700 transition-colors uppercase font-sans cursor-pointer"
-                    >
-                      Oui
-                    </button>
-                    <button
-                      onClick={() => setDeleteConfirmId(null)}
-                      className="px-2 py-0.5 bg-slate-200 text-slate-700 rounded text-[10px] font-bold hover:bg-slate-300 transition-colors uppercase font-sans cursor-pointer"
-                    >
-                      Non
-                    </button>
-                  </div>
-                ) : (
+              {currentUser?.role !== "worker" && (
+                <div className="flex items-center justify-end gap-1.5 pt-3 border-t border-slate-50">
                   <button
-                    id={`btn-delete-clean-${task.id}`}
+                    id={`btn-edit-clean-${task.id}`}
                     onClick={() => {
-                      setDeleteConfirmId(task.id);
+                      setEditingTask({ ...task });
                     }}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-md border border-rose-50 font-sans cursor-pointer"
+                    className="inline-flex items-center gap-1 px-3 py-1 text-xs text-slate-600 hover:text-slate-950 hover:bg-slate-50 rounded-md border border-slate-100 font-sans cursor-pointer"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    Supprimer
+                    <Edit className="w-3.5 h-3.5" />
+                    Modifier personnel/notes
                   </button>
-                )}
-              </div>
+                  {deleteConfirmId === task.id ? (
+                    <div className="flex items-center gap-1.5 bg-rose-50 px-2 py-1 rounded-md border border-rose-100 animate-pulse">
+                      <span className="text-[10px] font-bold text-rose-600 font-sans">Supprimer ?</span>
+                      <button
+                        onClick={() => {
+                          onDeleteCleaningTask(task.id);
+                          setDeleteConfirmId(null);
+                        }}
+                        className="px-2 py-0.5 bg-rose-600 text-white rounded text-[10px] font-bold hover:bg-rose-700 transition-colors uppercase font-sans cursor-pointer"
+                      >
+                        Oui
+                      </button>
+                      <button
+                        onClick={() => setDeleteConfirmId(null)}
+                        className="px-2 py-0.5 bg-slate-200 text-slate-700 rounded text-[10px] font-bold hover:bg-slate-300 transition-colors uppercase font-sans cursor-pointer"
+                      >
+                        Non
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      id={`btn-delete-clean-${task.id}`}
+                      onClick={() => {
+                        setDeleteConfirmId(task.id);
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-md border border-rose-50 font-sans cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Supprimer
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}
@@ -379,18 +398,39 @@ export default function CleaningTab({
                     className="w-full text-slate-800 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-slate-400 font-mono"
                   />
                 </div>
-                <div>
+                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5 font-sans">
                     Nom du Technicien *
                   </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ex: Anna Laurent"
-                    value={cleanerName}
-                    onChange={(e) => setCleanerName(e.target.value)}
-                    className="w-full text-slate-800 placeholder-slate-400 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-slate-400 font-sans"
-                  />
+                  {workers && workers.length > 0 ? (
+                    <select
+                      required
+                      value={cleanerId}
+                      onChange={(e) => {
+                        const selId = e.target.value;
+                        const match = workers.find(w => w.id === selId);
+                        setCleanerId(selId);
+                        setCleanerName(match ? match.fullName : "");
+                      }}
+                      className="w-full text-slate-800 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-slate-400 font-sans cursor-pointer"
+                    >
+                      <option value="">-- Choisir un travailleur --</option>
+                      {workers.map((w) => (
+                        <option key={w.id} value={w.id}>
+                          {w.fullName}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ex: Anna Laurent"
+                      value={cleanerName}
+                      onChange={(e) => setCleanerName(e.target.value)}
+                      className="w-full text-slate-800 placeholder-slate-400 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-slate-400 font-sans"
+                    />
+                  )}
                 </div>
               </div>
 
@@ -470,13 +510,37 @@ export default function CleaningTab({
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5 font-sans">
                   Assigned Cleaner
                 </label>
-                <input
-                  type="text"
-                  required
-                  value={editingTask.cleanerName}
-                  onChange={(e) => setEditingTask({ ...editingTask, cleanerName: e.target.value })}
-                  className="w-full text-slate-800 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-slate-400 font-sans"
-                />
+                {workers && workers.length > 0 ? (
+                  <select
+                    required
+                    value={editingTask.cleanerId || ""}
+                    onChange={(e) => {
+                      const selId = e.target.value;
+                      const match = workers.find(w => w.id === selId);
+                      setEditingTask({
+                        ...editingTask,
+                        cleanerId: selId,
+                        cleanerName: match ? match.fullName : ""
+                      });
+                    }}
+                    className="w-full text-slate-800 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-slate-400 font-sans cursor-pointer"
+                  >
+                    <option value="">-- Choisir un travailleur --</option>
+                    {workers.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.fullName}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    required
+                    value={editingTask.cleanerName}
+                    onChange={(e) => setEditingTask({ ...editingTask, cleanerName: e.target.value })}
+                    className="w-full text-slate-800 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-slate-400 font-sans"
+                  />
+                )}
               </div>
 
               <div>
