@@ -90,6 +90,31 @@
         }
       },
       "required": ["id", "apartmentId", "ownerId", "guestName", "lastUpdated", "messages"]
+    },
+    "Review": {
+      "title": "Review",
+      "description": "Guest reviews for concierges",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "conciergeId": { "type": "string" },
+        "apartmentId": { "type": "string" },
+        "rating": { "type": "number" },
+        "content": { "type": "string" },
+        "guestName": { "type": "string" },
+        "isAnonymous": { "type": "boolean" },
+        "guestId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": [
+        "id",
+        "conciergeId",
+        "rating",
+        "content",
+        "guestName",
+        "isAnonymous",
+        "createdAt"
+      ]
     }
   },
   "firestore": {
@@ -112,6 +137,10 @@
     "/threads/{threadId}": {
       "schema": "CommunicationThread",
       "description": "Threads collection"
+    },
+    "/reviews/{reviewId}": {
+      "schema": "Review",
+      "description": "Guest reviews of concierges"
     }
   }
 }

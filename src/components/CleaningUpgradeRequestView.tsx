@@ -41,17 +41,17 @@ export default function CleaningUpgradeRequestView({
   return (
     <div className="max-w-4xl mx-auto space-y-8 animate-fade-in py-4 px-2">
       {/* Header Banner */}
-      <div className="relative bg-gradient-to-r from-slate-905 to-slate-900 text-slate-800 bg-slate-100 border border-slate-200/60 p-8 rounded-3xl overflow-hidden shadow-xs">
-        <div className="absolute right-0 top-0 translate-x-12 -translate-y-12 w-64 h-64 bg-blue-100/40 rounded-full blur-3xl pointer-events-none" />
+      <div className="relative bg-gradient-to-r from-slate-900 via-slate-850 to-indigo-950 border border-slate-800/60 p-8 rounded-3xl overflow-hidden shadow-md">
+        <div className="absolute right-0 top-0 translate-x-12 -translate-y-12 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10 max-w-2xl space-y-4">
-          <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-50 border border-amber-100 text-amber-800 text-[10px] font-bold uppercase tracking-wider rounded-full">
-            <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+          <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-500/10 border border-amber-500/20 text-amber-250 text-[10px] font-bold uppercase tracking-wider rounded-full">
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
             Module Premium Recommandé
           </div>
-          <h2 className="text-2xl font-semibold tracking-tight text-slate-900 font-sans">
+          <h2 className="text-2xl font-bold tracking-tight text-white font-sans">
             Optimisez vos rotations avec les Tâches de Ménage de SpaceOne
           </h2>
-          <p className="text-slate-600 text-xs md:text-sm leading-relaxed font-sans">
+          <p className="text-slate-200 text-xs md:text-sm leading-relaxed font-sans font-normal">
             Un service d'exception exige une propreté irréprochable. Intégrez notre module
             de turnovers automatisés pour automatiser le travail de vos techniciens et
             garantir des check-ins d'exception.

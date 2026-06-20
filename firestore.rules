@@ -154,5 +154,12 @@ service cloud.firestore {
       allow create, update, delete: if true;
     }
 
+    // --- Reviews Collection ---
+    match /reviews/{reviewId} {
+      allow get, list: if true;
+      allow create: if true;
+      allow update, delete: if isSignedIn() && (resource.data.guestId == request.auth.uid || isAdmin());
+    }
+
   }
 }

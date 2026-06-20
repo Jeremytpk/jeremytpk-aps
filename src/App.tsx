@@ -74,6 +74,7 @@ import {
   Trash2,
   Copy,
   Loader2,
+  Search,
 } from "lucide-react";
 
 export default function App() {
@@ -133,6 +134,20 @@ export default function App() {
   const [editFullName, setEditFullName] = useState("");
   const [editBusinessName, setEditBusinessName] = useState("");
   const [editRole, setEditRole] = useState<"espace" | "admin">("espace");
+  const [adminSearchQuery, setAdminSearchQuery] = useState("");
+  const [selectedConciergeId, setSelectedConciergeId] = useState<string | null>(null);
+
+  const filteredUsers = allUsers
+    .filter((u) => u.role === "espace")
+    .filter((user) => {
+      if (!adminSearchQuery) return true;
+      const queryLower = adminSearchQuery.toLowerCase();
+      return (
+        (user.businessName && user.businessName.toLowerCase().includes(queryLower)) ||
+        (user.fullName && user.fullName.toLowerCase().includes(queryLower)) ||
+        (user.email && user.email.toLowerCase().includes(queryLower))
+      );
+    });
 
   // Worker sub-account creation state
   const [newWorkerName, setNewWorkerName] = useState("");
@@ -339,6 +354,13 @@ export default function App() {
 
     return () => unsubscribeAuth();
   }, []);
+
+  // Safeguard: Always redirect worker to their dedicated cleaning tasks page upon active session load
+  useEffect(() => {
+    if (currentUser && currentUser.role === "worker") {
+      setActiveTab("cleaning");
+    }
+  }, [currentUser]);
 
   // Real-time Firestore sync based on authenticated user and roles
   useEffect(() => {
@@ -1389,7 +1411,7 @@ export default function App() {
                       className={`py-2 text-[10px] font-bold font-sans rounded-lg transition-all cursor-pointer text-center uppercase tracking-wider ${
                         regAccountType === "personal"
                           ? "bg-white text-blue-750 shadow-xs border border-slate-200"
-                          : "text-slate-550 hover:text-slate-800"
+                          : "text-slate-500 hover:text-slate-800"
                       }`}
                     >
                       Personnel (Client)
@@ -1403,7 +1425,7 @@ export default function App() {
                       className={`py-2 text-[10px] font-bold font-sans rounded-lg transition-all cursor-pointer text-center uppercase tracking-wider ${
                         regAccountType === "partner"
                           ? "bg-white text-blue-750 shadow-xs border border-slate-200"
-                          : "text-slate-550 hover:text-slate-800"
+                          : "text-slate-500 hover:text-slate-800"
                       }`}
                     >
                       Partenaire (Concierge)
@@ -1677,7 +1699,7 @@ export default function App() {
             Navigation Principale
           </div>
           
-          {currentUser?.role !== "worker" && (
+          {currentUser?.role !== "worker" && currentUser?.role !== "admin" && (
             <button
               onClick={() => {
                 setActiveTab("overview");
@@ -1694,7 +1716,7 @@ export default function App() {
             </button>
           )}
 
-          {currentUser?.role !== "worker" && (
+          {currentUser?.role !== "worker" && currentUser?.role !== "admin" && (
             <button
               onClick={() => {
                 setActiveTab("apartments");
@@ -1716,7 +1738,7 @@ export default function App() {
             </button>
           )}
 
-          {currentUser?.role !== "worker" && (
+          {currentUser?.role !== "worker" && currentUser?.role !== "admin" && (
             <button
               onClick={() => {
                 setActiveTab("bookings");
@@ -1738,7 +1760,7 @@ export default function App() {
             </button>
           )}
 
-          {(currentUser?.role === "worker" || currentUser?.role === "admin" || currentUser?.role === "espace" || currentUser?.isCleaningAllowed !== false) && (
+          {(currentUser?.role === "worker" || (currentUser?.role === "espace" && currentUser?.isCleaningAllowed !== false)) && currentUser?.role !== "admin" && (
             <button
               onClick={() => {
                 setActiveTab("cleaning");
@@ -1772,7 +1794,7 @@ export default function App() {
             </button>
           )}
 
-          {currentUser?.role !== "worker" && (
+          {currentUser?.role !== "worker" && currentUser?.role !== "admin" && (
             <button
               onClick={() => {
                 setActiveTab("chat");
@@ -1799,7 +1821,7 @@ export default function App() {
             </button>
           )}
 
-          {(currentUser?.role === "espace" || currentUser?.role === "admin") && (
+          {currentUser?.role === "espace" && currentUser?.role !== "admin" && (
             <button
               onClick={() => {
                 setActiveTab("team");
@@ -2377,6 +2399,55 @@ export default function App() {
               </div>
             </div>
 
+            {/* KPI Cards section for very professional feel */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 animate-fade-in">
+              <div className="bg-white border border-slate-150 p-5 rounded-2xl shadow-2xs flex items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Établissements Actifs</span>
+                  <div className="text-2xl font-black text-slate-800 font-sans">
+                    {allUsers.filter(u => u.role === "espace" && u.approved).length} <span className="text-xs font-normal text-slate-400">/ {allUsers.filter(u => u.role === "espace").length}</span>
+                  </div>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                  <Building className="w-5 h-5" />
+                </div>
+              </div>
+
+              <div className="bg-white border border-slate-150 p-5 rounded-2xl shadow-2xs flex items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Parc Immobilier Global</span>
+                  <div className="text-2xl font-black text-slate-800 font-sans">{apartments.length}</div>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center shrink-0">
+                  <Layers className="w-5 h-5" />
+                </div>
+              </div>
+
+              <div className="bg-white border border-slate-150 p-5 rounded-2xl shadow-2xs flex items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Volume de Transactions</span>
+                  <div className="text-2xl font-black text-emerald-600 font-sans">
+                    {bookings.filter(b => b.status !== "cancelled").reduce((sum, b) => sum + (b.totalAmount || 0), 0).toLocaleString("fr-FR")} €
+                  </div>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                  <DollarSign className="w-5 h-5" />
+                </div>
+              </div>
+
+              <div className="bg-white border border-slate-150 p-5 rounded-2xl shadow-2xs flex items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Demandes en attente</span>
+                  <div className="text-2xl font-black text-amber-600 font-sans">
+                    {allUsers.filter(u => u.role === "espace" && !u.approved).length + allUsers.filter(u => u.role === "espace" && u.isCleaningAccessRequested).length}
+                  </div>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                  <Clock className="w-5 h-5" />
+                </div>
+              </div>
+            </div>
+
             {/* Sélecteur de sous-onglet administration */}
             <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl max-w-lg shadow-inner">
               <button
@@ -2443,12 +2514,15 @@ export default function App() {
                               className="bg-white border border-amber-150/70 rounded-xl p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-2xs"
                             >
                               <div className="space-y-1.5 text-xs text-slate-600 font-sans flex-grow">
-                                <div className="text-sm font-black text-slate-900 flex flex-wrap items-center gap-2">
-                                  <span>{reqUser.businessName}</span>
+                                <button
+                                  onClick={() => setSelectedConciergeId(reqUser.id)}
+                                  className="text-sm font-black text-slate-900 group flex flex-wrap items-center gap-2 hover:underline text-left cursor-pointer"
+                                >
+                                  <span className="text-blue-650 group-hover:text-blue-800">{reqUser.businessName}</span>
                                   <span className="text-[9px] bg-amber-100/60 text-amber-800 border border-amber-150 px-2 py-0.5 rounded-full font-bold">
                                     Demandé le {reqDate}
                                   </span>
-                                </div>
+                                </button>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-0.5 mt-0.5">
                                   <div>
                                     Gérant / Directeur :{" "}
@@ -2463,16 +2537,11 @@ export default function App() {
                                     </span>
                                   </div>
                                 </div>
-                                <div className="p-2.5 bg-slate-50 border border-slate-100 text-[10.5px] leading-relaxed rounded-lg text-slate-500 mt-1.5">
-                                  🛡️ <strong>Avis d'Administration :</strong> L'acceptation du module passera le
-                                  compte de cet utilisateur à <strong>10% commission globale</strong> au lieu de 8% standard. 
-                                  Contactez le gérant par mail pour modifier le contrat avant d'autoriser.
-                                </div>
                               </div>
                               <div className="shrink-0 w-full md:w-auto">
                                 <button
                                   onClick={() => handleToggleUserCleaning(reqUser)}
-                                  className="w-full md:w-auto px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider cursor-pointer shadow-xs transition-all active:scale-98"
+                                  className="w-full md:w-auto px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider cursor-pointer shadow-xs transition-colors"
                                 >
                                   Activer & Valider (Tarif 10%)
                                 </button>
@@ -2484,10 +2553,218 @@ export default function App() {
                   </div>
                 )}
 
-                <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-xs space-y-4">
-                  <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider font-sans border-b border-slate-100 pb-2">
-                    Validation & Droits des Établissements Concierges
-                  </h3>
+                {/* Inspecteur de Concierge en détail */}
+                {(() => {
+                  const selectedUser = allUsers.find(u => u.id === selectedConciergeId);
+                  if (!selectedUser) return null;
+                  
+                  // Get statistics for the selected Concierge
+                  const conciergeApts = apartments.filter(a => a.ownerId === selectedUser.id);
+                  const conciergeBookings = bookings.filter(b => conciergeApts.some(a => a.id === b.apartmentId));
+                  const conciergeWorkers = allUsers.filter(u => u.role === "worker" && u.parentId === selectedUser.id);
+                  const totalBookingsAmount = conciergeBookings
+                    .filter(b => b.status !== "cancelled")
+                    .reduce((sum, b) => sum + (b.totalAmount || 0), 0);
+
+                  return (
+                    <div className="bg-slate-900 text-white rounded-3xl p-6 shadow-xl border border-slate-800 space-y-6 animate-fade-in relative overflow-hidden">
+                      <div className="absolute right-0 top-0 -mt-8 -mr-8 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
+                      
+                      {/* Close button & Title */}
+                      <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+                        <div className="space-y-1">
+                          <div className="text-[10px] uppercase font-bold text-blue-400 tracking-wider font-mono">Dossier Inspecteur Partenaire</div>
+                          <h3 className="text-xl font-black tracking-tight">{selectedUser.businessName}</h3>
+                        </div>
+                        <button
+                          onClick={() => setSelectedConciergeId(null)}
+                          className="p-1 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                        >
+                          Masquer [X]
+                        </button>
+                      </div>
+
+                      {/* Info and stats grid */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {/* Column 1: Core Details */}
+                        <div className="bg-slate-850 p-4 rounded-xl border border-slate-800 space-y-3.5">
+                          <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-mono border-b border-slate-800 pb-1.5">Identité Établissement</h4>
+                          
+                          <div className="space-y-2.5 text-xs text-slate-300 font-sans">
+                            <div>
+                              <div className="text-[9px] text-slate-400 font-mono">Directeur de compte</div>
+                              <div className="font-bold text-slate-100">{selectedUser.fullName}</div>
+                            </div>
+                            <div>
+                              <div className="text-[9px] text-slate-400 font-mono">Mail de liaison</div>
+                              <div className="font-mono text-blue-300 underline font-semibold">{selectedUser.email}</div>
+                            </div>
+                            <div>
+                              <div className="text-[9px] text-slate-400 font-mono">Inscrit le</div>
+                              <div>{selectedUser.createdAt ? new Date(selectedUser.createdAt).toLocaleDateString("fr-FR", { day: 'numeric', month: 'long', year: 'numeric' }) : "-"}</div>
+                            </div>
+                            <div>
+                              <div className="text-[9px] text-slate-400 font-mono">Frais de commission d'origine</div>
+                              <div className="font-bold text-amber-400">
+                                {selectedUser.isCleaningAllowed !== false ? "10% commission (Module ménage inclus)" : "8% commission standard"}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Column 2: Core aggregates */}
+                        <div className="bg-slate-850 p-4 rounded-xl border border-slate-800 space-y-4">
+                          <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-mono border-b border-slate-800 pb-1.5">Activité Générée</h4>
+                          
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-800">
+                              <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Logements</span>
+                              <div className="text-xl font-black text-slate-100">{conciergeApts.length}</div>
+                            </div>
+                            <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-800">
+                              <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Réservations</span>
+                              <div className="text-xl font-black text-slate-100">{conciergeBookings.length}</div>
+                            </div>
+                            <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-800">
+                              <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Équipes terrain</span>
+                              <div className="text-xl font-black text-slate-100">{conciergeWorkers.length}</div>
+                            </div>
+                            <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-800">
+                              <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Flux financier</span>
+                              <div className="text-sm font-bold text-emerald-400">{totalBookingsAmount.toLocaleString("fr-FR")} €</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Column 3: Control Center */}
+                        <div className="bg-slate-850 p-4 rounded-xl border border-slate-800 space-y-3.5 flex flex-col justify-between">
+                          <div>
+                            <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-mono border-b border-slate-800 pb-1.5">Centre de Commande</h4>
+                            <p className="text-[10px] text-slate-400 leading-relaxed font-sans mt-2">
+                              Pilotez les autorisations d'accès instantanément pour modifier son contrat ou suspendre ses droits sur l'application.
+                            </p>
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-2 text-xs font-bold pt-2">
+                            <button
+                              onClick={() => handleToggleUserApproval(selectedUser)}
+                              className={`py-2 px-3 rounded-xl transition-colors font-sans cursor-pointer uppercase text-[9px] tracking-wider font-extrabold ${
+                                selectedUser.approved
+                                  ? "bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700"
+                                  : "bg-blue-600 hover:bg-blue-700 text-white"
+                              }`}
+                            >
+                              {selectedUser.approved ? "Invalider" : "Valider"}
+                            </button>
+                            
+                            <button
+                              onClick={() => handleToggleUserSuspension(selectedUser)}
+                              className={`py-2 px-3 rounded-xl transition-colors font-sans cursor-pointer uppercase text-[9px] tracking-wider font-extrabold ${
+                                selectedUser.suspended
+                                  ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                                  : "bg-red-900/55 text-red-150 hover:bg-red-900"
+                              }`}
+                            >
+                              {selectedUser.suspended ? "Activer" : "Suspendre"}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Detail lists */}
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2">
+                        {/* Left Sub-column: Apartments associated */}
+                        <div className="space-y-3">
+                          <h5 className="text-[11px] font-extrabold text-slate-300 uppercase tracking-wider font-sans border-b border-slate-800 pb-1">
+                            Logements de la Conciergerie ({conciergeApts.length})
+                          </h5>
+                          <div className="max-h-60 overflow-y-auto space-y-2 pr-1 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-slate-900">
+                            {conciergeApts.map(apt => (
+                              <div key={apt.id} className="bg-slate-850 border border-slate-800 p-3 rounded-xl flex items-center gap-3">
+                                <img
+                                  src={apt.thumbnail || "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=300&q=80"}
+                                  alt={apt.name}
+                                  className="w-12 h-12 object-cover rounded-lg shrink-0 border border-slate-800"
+                                  referrerPolicy="no-referrer"
+                                />
+                                <div className="flex-grow min-w-0 text-xs">
+                                  <div className="font-extrabold text-slate-100 truncate">{apt.name}</div>
+                                  <div className="text-slate-400 truncate text-[10px] font-sans">{apt.address}</div>
+                                  <div className="text-[9px] font-mono text-blue-400 mt-0.5">
+                                    {apt.rooms} pièces • {apt.beds} lits • Tarif: {apt.pricePerNight || 0} €/nuit
+                                  </div>
+                                </div>
+                                <span className={`text-[8px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full ${
+                                  apt.status === "occupied" ? "bg-red-500/20 text-red-300 border border-red-500/20" : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/20"
+                                }`}>
+                                  {apt.status === "occupied" ? "Occupé" : "Libre"}
+                                </span>
+                              </div>
+                            ))}
+                            {conciergeApts.length === 0 && (
+                              <div className="text-center py-6 text-slate-500 text-xs font-sans">
+                                Aucun logement enregistré pour le moment.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Right Sub-column: Bookings associated */}
+                        <div className="space-y-3">
+                          <h5 className="text-[11px] font-extrabold text-slate-300 uppercase tracking-wider font-sans border-b border-slate-800 pb-1">
+                            Historique des Réservations ({conciergeBookings.length})
+                          </h5>
+                          <div className="max-h-60 overflow-y-auto space-y-2 pr-1 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-slate-900">
+                            {conciergeBookings.map(b => {
+                              const apt = conciergeApts.find(a => a.id === b.apartmentId);
+                              return (
+                                <div key={b.id} className="bg-slate-850 border border-slate-800 p-3 rounded-xl flex flex-col text-xs space-y-1">
+                                  <div className="flex items-center justify-between">
+                                    <div className="font-extrabold text-slate-100">{b.guestName}</div>
+                                    <div className="font-mono text-emerald-400 font-bold">{b.totalAmount || 0} €</div>
+                                  </div>
+                                  <div className="text-[10px] text-slate-400 truncate">
+                                    Hébergement: <span className="text-slate-200 font-semibold">{apt ? apt.name : "Hébergement"}</span>
+                                  </div>
+                                  <div className="flex items-center justify-between text-[9px] text-slate-500 pt-1 font-mono">
+                                    <span>Du {b.checkIn || b.startDate} au {b.checkOut || b.endDate}</span>
+                                    <span className="uppercase font-bold text-slate-300">{b.status}</span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            {conciergeBookings.length === 0 && (
+                              <div className="text-center py-6 text-slate-500 text-xs font-sans">
+                                Aucune réservation enregistrée pour le moment.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <div className="bg-white border border-slate-150 rounded-2xl p-6 shadow-xs space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-100">
+                    <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider font-sans">
+                      Validation & Droits des Établissements Concierges
+                    </h3>
+                    
+                    {/* Search Field */}
+                    <div className="relative w-full sm:w-72">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Search className="h-3.5 w-3.5 text-slate-450" />
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Rechercher un établissement..."
+                        value={adminSearchQuery}
+                        onChange={(e) => setAdminSearchQuery(e.target.value)}
+                        className="block w-full pl-9 pr-3 py-1.5 bg-slate-50 hover:bg-slate-100/70 border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-600 rounded-xl text-xs font-sans transition-all"
+                      />
+                    </div>
+                  </div>
                   
                   <div className="overflow-x-auto min-w-full">
                     <table className="min-w-full divide-y divide-slate-100 font-sans">
@@ -2502,16 +2779,21 @@ export default function App() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 text-xs">
-                        {allUsers
-                          .filter((u) => u.role === "espace")
-                          .map((user) => (
+                        {filteredUsers.map((user) => (
                             <tr key={user.id} className="hover:bg-slate-50/40">
-                              <td className="px-4 py-3.5 font-bold text-slate-800">
-                                {user.businessName}
+                              <td className="px-4 py-3.5">
+                                <button
+                                  onClick={() => setSelectedConciergeId(user.id)}
+                                  className="hover:underline cursor-pointer text-blue-650 hover:text-blue-800 font-bold font-sans text-left flex items-center gap-1.5 transition-all outline-none"
+                                  title="Inspecter en détail"
+                                >
+                                  <Building className="w-3.5 h-3.5 text-blue-500" />
+                                  <span>{user.businessName}</span>
+                                </button>
                               </td>
                               <td className="px-4 py-3.5">
-                                <div className="font-semibold">{user.fullName}</div>
-                                <div className="text-[10px] text-slate-400 font-mono">{user.email}</div>
+                                <div className="font-semibold text-slate-700">{user.fullName}</div>
+                                <div className="text-[10px] text-slate-450 font-mono">{user.email}</div>
                               </td>
                               <td className="px-4 py-3.5 text-slate-500 font-mono">
                                 {user.createdAt ? user.createdAt.substring(0, 10) : "Par défaut"}
@@ -2520,7 +2802,7 @@ export default function App() {
                                 <div className="flex flex-col items-center gap-1">
                                   <button
                                     onClick={() => handleToggleUserCleaning(user)}
-                                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider cursor-pointer border ${
+                                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider cursor-pointer border transition-colors ${
                                       user.isCleaningAllowed !== false
                                         ? "bg-emerald-50 text-emerald-800 border-emerald-150 hover:bg-emerald-100"
                                         : "bg-amber-50 text-amber-800 border-amber-150 hover:bg-amber-100"
@@ -2535,46 +2817,53 @@ export default function App() {
                                   )}
                                 </div>
                               </td>
-                            <td className="px-4 py-3.5 text-center">
-                              <span className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${
-                                user.approved
-                                  ? "bg-blue-50 text-blue-700"
-                                  : "bg-red-50 text-red-650 animate-pulse"
-                              }`}>
-                                {user.approved ? "Validé" : "En cours..."}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3.5 text-right space-x-1">
-                              <button
-                                onClick={() => handleToggleUserApproval(user)}
-                                className={`px-3 py-1 rounded text-[10px] font-bold cursor-pointer transition-colors ${
+                              <td className="px-4 py-3.5 text-center">
+                                <span className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${
                                   user.approved
-                                    ? "bg-slate-100 hover:bg-slate-200 text-slate-600"
-                                    : "bg-blue-600 hover:bg-blue-700 text-white"
-                                }`}
-                              >
-                                {user.approved ? "Invalider" : "Valider"}
-                              </button>
-                              
-                              <button
-                                onClick={() => handleToggleUserSuspension(user)}
-                                className={`px-3 py-1 rounded text-[10px] font-bold cursor-pointer transition-colors ${
-                                  user.suspended
-                                    ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                                    : "bg-rose-50 hover:bg-rose-100 text-rose-600"
-                                }`}
-                              >
-                                {user.suspended ? "Activer" : "Suspendre"}
-                              </button>
+                                    ? "bg-blue-50 text-blue-700"
+                                    : "bg-red-50 text-red-650 animate-pulse"
+                                }`}>
+                                  {user.approved ? "Validé" : "En cours..."}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3.5 text-right space-x-1">
+                                <button
+                                  onClick={() => handleToggleUserApproval(user)}
+                                  className={`px-3 py-1 rounded text-[10px] font-bold cursor-pointer transition-colors ${
+                                    user.approved
+                                      ? "bg-slate-100 hover:bg-slate-200 text-slate-600"
+                                      : "bg-blue-600 hover:bg-blue-700 text-white"
+                                  }`}
+                                >
+                                  {user.approved ? "Invalider" : "Valider"}
+                                </button>
+                                
+                                <button
+                                  onClick={() => handleToggleUserSuspension(user)}
+                                  className={`px-3 py-1 rounded text-[10px] font-bold cursor-pointer transition-colors ${
+                                    user.suspended
+                                      ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                                      : "bg-rose-50 hover:bg-rose-100 text-rose-600"
+                                  }`}
+                                >
+                                  {user.suspended ? "Activer" : "Suspendre"}
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        {filteredUsers.length === 0 && (
+                          <tr>
+                            <td colSpan={6} className="text-center py-8 text-slate-400">
+                              Aucun établissement ne correspond à votre recherche.
                             </td>
                           </tr>
-                        ))}
-                    </tbody>
-                  </table>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
             {adminSubTab === "bookings" && (
               <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-xs space-y-4">

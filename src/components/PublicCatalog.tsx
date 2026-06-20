@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Apartment, Booking, HomeOwner, MessageThread } from "../types";
+import { Apartment, Booking, HomeOwner, MessageThread, Review } from "../types";
 import { db, handleFirestoreError, OperationType } from "../firebase";
 import { collection, addDoc, getDocs, query, where, doc, getDoc } from "firebase/firestore";
 import { formatDateToFR } from "../utils";
@@ -30,7 +30,8 @@ import {
   LogOut,
   MessageSquare,
   Send,
-  Tag
+  Tag,
+  Star
 } from "lucide-react";
 
 interface PublicCatalogProps {
@@ -68,6 +69,86 @@ export default function PublicCatalog({
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [chatMessageText, setChatMessageText] = useState("");
   const [selectedPartnerId, setSelectedPartnerId] = useState<string>("all");
+
+  // Reviews dynamic data storage
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [loadingReviews, setLoadingReviews] = useState(false);
+
+  // Review submission forms
+  const [reviewRating, setReviewRating] = useState<number>(5);
+  const [reviewContent, setReviewContent] = useState("");
+  const [reviewIsAnonymous, setReviewIsAnonymous] = useState(false);
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewSuccess, setReviewSuccess] = useState(false);
+  const [reviewError, setReviewError] = useState("");
+  const [ratingBookingId, setRatingBookingId] = useState<string | null>(null);
+
+  const fetchReviews = async () => {
+    try {
+      setLoadingReviews(true);
+      const q = query(collection(db, "reviews"));
+      const snap = await getDocs(q);
+      const list: Review[] = [];
+      snap.forEach((doc) => {
+        list.push({ id: doc.id, ...doc.data() } as Review);
+      });
+      setReviews(list);
+    } catch (err) {
+      console.error("Error loading reviews:", err);
+    } finally {
+      setLoadingReviews(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchReviews();
+  }, []);
+
+  const handleReviewSubmit = async (conciergeId: string, aptId?: string) => {
+    if (!reviewContent.trim()) {
+      setReviewError("Veuillez écrire un commentaire pour votre avis.");
+      return;
+    }
+    setReviewSubmitting(true);
+    setReviewError("");
+    setReviewSuccess(false);
+
+    try {
+      const reviewData = {
+        conciergeId,
+        apartmentId: aptId || selectedApartment?.id || "",
+        rating: reviewRating,
+        content: reviewContent.trim(),
+        guestName: reviewIsAnonymous ? "Voyageur Anonyme" : (currentUser?.fullName || "Voyageur Prestige"),
+        isAnonymous: reviewIsAnonymous,
+        guestId: currentUser?.id || "anonymous",
+        createdAt: new Date().toISOString()
+      };
+
+      const docRef = await addDoc(collection(db, "reviews"), reviewData);
+      
+      const newReview: Review = {
+        id: docRef.id,
+        ...reviewData
+      };
+      setReviews(prev => [newReview, ...prev]);
+
+      // Reset form states
+      setReviewContent("");
+      setReviewRating(5);
+      setReviewIsAnonymous(false);
+      setReviewSuccess(true);
+      
+      setTimeout(() => {
+        setReviewSuccess(false);
+      }, 5000);
+    } catch (err) {
+      console.error("Error saving review:", err);
+      setReviewError("Une erreur est de type réseau ou permission Firestore. Veuillez réessayer.");
+    } finally {
+      setReviewSubmitting(false);
+    }
+  };
 
   // Extract partners who have apartments for easy filtering
   const activePartnersMap = useMemo(() => {
@@ -442,55 +523,198 @@ export default function PublicCatalog({
                     {myBookings.map((b) => {
                       const apt = apartments.find(a => a.id === b.apartmentId);
                       return (
-                        <div key={b.id} className="bg-white border border-slate-200 rounded-3xl p-5 md:p-6 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-                          <div className="flex items-start gap-4">
-                            <div className="w-20 h-20 rounded-2xl bg-slate-105 overflow-hidden border border-slate-200/60 shrink-0">
-                              {apt?.images?.[0] ? (
-                                <img src={apt.images[0]} alt={apt.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        <div key={b.id} className="bg-white border border-slate-200 rounded-3xl p-5 md:p-6 shadow-xs flex flex-col gap-5">
+                          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                            <div className="flex items-start gap-4">
+                              <div className="w-20 h-20 rounded-2xl bg-slate-105 overflow-hidden border border-slate-200/60 shrink-0">
+                                {apt?.images?.[0] ? (
+                                  <img src={apt.images[0]} alt={apt.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center bg-slate-100 text-slate-400 text-xs">SO</div>
+                                )}
+                              </div>
+                              <div className="space-y-1.5 text-left">
+                                <div className="flex items-center gap-2">
+                                  <span className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-md ${
+                                    b.status === "upcoming" ? "bg-blue-50 text-blue-600 border border-blue-105" :
+                                    b.status === "active" ? "bg-emerald-50 text-emerald-600 border border-emerald-105" :
+                                    "bg-slate-50 text-slate-505 border border-slate-150"
+                                  }`}>
+                                    {b.status === "upcoming" ? "À venir" : b.status === "active" ? "En cours" : "Terminé"}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 font-mono font-bold">Ref: {b.id.substring(0, 8)}</span>
+                                </div>
+                                <h4 className="text-sm font-bold text-slate-900 font-sans">{apt?.name || "Résidence SpaceOne"}</h4>
+                                <p className="text-xs text-slate-400 flex items-center gap-1 font-sans"><MapPin className="w-3 h-3 shrink-0" /> {apt?.address || "Adresse de prestige"}</p>
+                                <div className="text-xs text-slate-600 flex flex-wrap gap-x-4 gap-y-1 pt-1">
+                                  <span className="font-sans flex items-center gap-1 font-semibold"><CalendarDays className="w-3.5 h-3.5 text-slate-400" /> {formatDateToFR(b.checkIn)} au {formatDateToFR(b.checkOut)}</span>
+                                  <span className="font-mono text-slate-500 font-semibold">{b.guestsCount} Voyageur{b.guestsCount > 1 ? "s" : ""}</span>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            <div className="flex flex-col items-end gap-3 w-full md:w-auto border-t md:border-t-0 pt-4 md:pt-0 border-slate-100 shrink-0">
+                              <div className="text-right">
+                                <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold block">Montant final</span>
+                                <span className="text-lg font-mono font-bold text-slate-900">{b.totalAmount} $</span>
+                              </div>
+                              
+                              <div className="flex flex-wrap items-center gap-2 justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const match = threads.find(t => t.bookingId === b.id);
+                                    if (match) {
+                                      setSelectedThreadId(match.id);
+                                    }
+                                    setClientTab("chat");
+                                  }}
+                                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer inline-flex items-center gap-1.5"
+                                >
+                                  <MessageSquare className="w-3 h-3" />
+                                  <span>Discussion</span>
+                                </button>
+
+                                {b.ownerId && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (ratingBookingId === b.id) {
+                                        setRatingBookingId(null);
+                                      } else {
+                                        setRatingBookingId(b.id);
+                                        setReviewContent("");
+                                        setReviewRating(5);
+                                        setReviewIsAnonymous(false);
+                                        setReviewSuccess(false);
+                                        setReviewError("");
+                                      }
+                                    }}
+                                    className={`px-4 py-2 text-[10px] font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer inline-flex items-center gap-1.5 ${
+                                      ratingBookingId === b.id
+                                        ? "bg-slate-100 border border-slate-205 text-slate-600 hover:bg-slate-200"
+                                        : "bg-amber-500 hover:bg-amber-600 text-white shadow-xs"
+                                    }`}
+                                  >
+                                    <Star className={`w-3 h-3 ${ratingBookingId === b.id ? "text-slate-500" : "text-white fill-white"}`} />
+                                    <span>{ratingBookingId === b.id ? "Annuler" : "Laisser un avis"}</span>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* INLINE EXPANSION REVIEW DRAWER FOR PORTAL BOOKINGS */}
+                          {ratingBookingId === b.id && b.ownerId && (
+                            <div className="border-t border-slate-100 pt-5 space-y-4 animate-fadeIn text-left">
+                              <div className="space-y-1">
+                                {(() => {
+                                  const bookingOwner = (partners && b.ownerId ? partners[b.ownerId] : null);
+                                  const destName = bookingOwner?.businessName || bookingOwner?.fullName || "votre concierge";
+                                  return (
+                                    <>
+                                      <h5 className="text-xs font-extrabold text-slate-855 font-sans tracking-tight">
+                                        Notez le service de <strong className="text-blue-600">{destName}</strong>
+                                      </h5>
+                                      <p className="text-[10px] text-slate-400 font-sans">
+                                        Séjour du {formatDateToFR(b.checkIn)} au {formatDateToFR(b.checkOut)} à {apt?.name}.
+                                      </p>
+                                    </>
+                                  );
+                                })()}
+                              </div>
+
+                              {reviewSuccess ? (
+                                <div className="bg-emerald-50 border border-emerald-200 text-emerald-850 rounded-xl p-4 text-xs font-sans">
+                                  ✓ Votre avis a bien été enregistré ! La note globale de votre concierge a été actualisée en direct.
+                                </div>
                               ) : (
-                                <div className="w-full h-full flex items-center justify-center bg-slate-100 text-slate-400 text-xs">SO</div>
+                                <div className="space-y-4 max-w-xl">
+                                  {reviewError && (
+                                    <div className="p-3 bg-red-50 border border-red-200 text-red-650 rounded-xl text-[10px] font-bold font-sans">
+                                      {reviewError}
+                                    </div>
+                                  )}
+
+                                  <div className="space-y-1">
+                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest font-sans">Attribution d'étoiles :</span>
+                                    <div className="flex items-center gap-1.5">
+                                      {Array.from({ length: 5 }, (_, idx) => {
+                                        const starVal = idx + 1;
+                                        return (
+                                          <button
+                                            key={idx}
+                                            type="button"
+                                            onClick={() => setReviewRating(starVal)}
+                                            className="p-1 hover:scale-115 active:scale-95 transition-all text-slate-200 hover:text-amber-500 cursor-pointer"
+                                          >
+                                            <Star
+                                              className={`w-5.5 h-5.5 transition-colors ${
+                                                starVal <= reviewRating
+                                                  ? "text-amber-500 fill-amber-500"
+                                                  : "text-slate-250"
+                                              }`}
+                                            />
+                                          </button>
+                                        );
+                                      })}
+                                      <span className="text-[10px] font-bold text-slate-500 font-sans ml-2">
+                                        {reviewRating}/5
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <div className="space-y-1">
+                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest font-sans">Détaillez votre expérience :</span>
+                                    <textarea
+                                      value={reviewContent}
+                                      onChange={(e) => setReviewContent(e.target.value)}
+                                      placeholder="Comment s'est passée votre communication, l'accueil, la propreté ?"
+                                      rows={2}
+                                      className="w-full bg-slate-50/70 border border-slate-200/60 rounded-xl py-2 px-3 text-xs font-sans text-slate-800 outline-none"
+                                    />
+                                  </div>
+
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="checkbox"
+                                      id={`anon-booking-${b.id}`}
+                                      checked={reviewIsAnonymous}
+                                      onChange={(e) => setReviewIsAnonymous(e.target.checked)}
+                                      className="w-3.5 h-3.5 text-blue-600 border-slate-300 rounded cursor-pointer"
+                                    />
+                                    <label htmlFor={`anon-booking-${b.id}`} className="text-[10px] font-bold text-slate-500 cursor-pointer select-none">
+                                      Soumettre cet avis de manière anonyme
+                                    </label>
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    disabled={reviewSubmitting}
+                                    onClick={async () => {
+                                      if (b.ownerId) {
+                                        await handleReviewSubmit(b.ownerId, b.apartmentId);
+                                        // Wait and close
+                                        setTimeout(() => {
+                                          setRatingBookingId(null);
+                                        }, 1500);
+                                      }
+                                    }}
+                                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer inline-flex items-center gap-1.5"
+                                  >
+                                    {reviewSubmitting ? (
+                                      <>
+                                        <Loader2 className="w-3 h-3 animate-spin text-white" />
+                                        <span>Publication...</span>
+                                      </>
+                                    ) : (
+                                      <span>Publier mon Avis</span>
+                                    )}
+                                  </button>
+                                </div>
                               )}
                             </div>
-                            <div className="space-y-1.5 text-left">
-                              <div className="flex items-center gap-2">
-                                <span className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-md ${
-                                  b.status === "upcoming" ? "bg-blue-50 text-blue-600 border border-blue-105" :
-                                  b.status === "active" ? "bg-emerald-50 text-emerald-600 border border-emerald-105" :
-                                  "bg-slate-50 text-slate-505 border border-slate-150"
-                                }`}>
-                                  {b.status === "upcoming" ? "À venir" : b.status === "active" ? "En cours" : "Terminé"}
-                                </span>
-                                <span className="text-[10px] text-slate-400 font-mono font-bold">Ref: {b.id.substring(0, 8)}</span>
-                              </div>
-                              <h4 className="text-sm font-bold text-slate-900 font-sans">{apt?.name || "Résidence SpaceOne"}</h4>
-                              <p className="text-xs text-slate-400 flex items-center gap-1 font-sans"><MapPin className="w-3 h-3 shrink-0" /> {apt?.address || "Adresse de prestige"}</p>
-                              <div className="text-xs text-slate-600 flex flex-wrap gap-x-4 gap-y-1 pt-1">
-                                <span className="font-sans flex items-center gap-1 font-semibold"><CalendarDays className="w-3.5 h-3.5 text-slate-400" /> {formatDateToFR(b.checkIn)} au {formatDateToFR(b.checkOut)}</span>
-                                <span className="font-mono text-slate-500 font-semibold">{b.guestsCount} Voyageur{b.guestsCount > 1 ? "s" : ""}</span>
-                              </div>
-                            </div>
-                          </div>
-                          
-                          <div className="flex flex-col items-end gap-3 w-full md:w-auto border-t md:border-t-0 pt-4 md:pt-0 border-slate-100">
-                            <div className="text-right">
-                              <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold block">Montant final</span>
-                              <span className="text-lg font-mono font-bold text-slate-900">{b.totalAmount} $</span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const match = threads.find(t => t.bookingId === b.id);
-                                if (match) {
-                                  setSelectedThreadId(match.id);
-                                }
-                                setClientTab("chat");
-                              }}
-                              className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer inline-flex items-center gap-1.5"
-                            >
-                              <MessageSquare className="w-3 h-3" />
-                              <span>Discussion Assistée</span>
-                            </button>
-                          </div>
+                          )}
                         </div>
                       );
                     })}
@@ -798,10 +1022,26 @@ export default function PublicCatalog({
                               {(() => {
                                 const aptOwner = (partners && apt.ownerId ? partners[apt.ownerId] : null) || owner;
                                 if (aptOwner) {
+                                  const cReviews = reviews.filter(r => r.conciergeId === aptOwner.id);
+                                  const avgRating = cReviews.length > 0 
+                                    ? Math.round((cReviews.reduce((sum, r) => sum + r.rating, 0) / cReviews.length) * 10) / 10
+                                    : null;
                                   return (
-                                    <div className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-50/70 border border-blue-100 rounded text-[9.5px] font-semibold text-blue-700 font-sans mt-0.5">
-                                      <Building className="w-2.5 h-2.5 text-blue-500 shrink-0" />
-                                      <span>Gérant : {aptOwner.businessName || "Compte Personnel"}</span>
+                                    <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                                      <div className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-50/70 border border-blue-100 rounded text-[9.5px] font-semibold text-blue-700 font-sans">
+                                        <Building className="w-2.5 h-2.5 text-blue-500 shrink-0" />
+                                        <span>Gérant : {aptOwner.businessName || "Compte Personnel"}</span>
+                                      </div>
+                                      {avgRating !== null ? (
+                                        <div className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-50/70 border border-amber-100 rounded text-[9.5px] font-bold text-amber-600 font-sans flex items-center">
+                                          <Star className="w-2.5 h-2.5 fill-amber-500 text-amber-500 shrink-0" />
+                                          <span>{avgRating} ({cReviews.length} avis)</span>
+                                        </div>
+                                      ) : (
+                                        <div className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-slate-50 border border-slate-200/50 rounded text-[9.5px] font-medium text-slate-400 font-sans">
+                                          <span>Nouveau concierge</span>
+                                        </div>
+                                      )}
                                     </div>
                                   );
                                 }
@@ -1261,6 +1501,209 @@ export default function PublicCatalog({
                   )}
                 </div>
               </div>
+
+              {/* SECTION: CONCIERGE REVIEWS AND RATINGS */}
+              {(() => {
+                const currentAptOwner = (partners && selectedApartment.ownerId ? partners[selectedApartment.ownerId] : null) || dynamicOwner || owner;
+                if (!currentAptOwner) return null;
+
+                const conciergeReviews = reviews.filter(r => r.conciergeId === currentAptOwner.id);
+                const avgRating = conciergeReviews.length > 0 
+                  ? Math.round((conciergeReviews.reduce((sum, r) => sum + r.rating, 0) / conciergeReviews.length) * 10) / 10
+                  : null;
+
+                return (
+                  <div className="lg:col-span-12 border-t border-slate-200/80 pt-8 mt-4 animate-fade-in text-left">
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
+                      {/* Left Side: Summary & Reviews List (7 cols) */}
+                      <div className="md:col-span-7 space-y-6">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h3 className="text-base font-extrabold text-slate-800 font-sans tracking-tight">
+                              Avis & Évaluations du Concierge
+                            </h3>
+                            <p className="text-xs text-slate-500 font-sans mt-0.5">
+                              Retours d'expérience authentiques laissés par les résidents pour {currentAptOwner.businessName || currentAptOwner.fullName || "ce concierge"}.
+                            </p>
+                          </div>
+
+                          {avgRating !== null && (
+                            <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-250 rounded-2xl px-3 py-1.5">
+                              <Star className="w-4 h-4 text-amber-500 fill-amber-500 shrink-0" />
+                              <div className="text-right">
+                                <span className="text-xs font-black text-amber-800 font-mono leading-none block">{avgRating} / 5</span>
+                                <span className="text-[9px] text-amber-600 font-bold block">{conciergeReviews.length} avis</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {conciergeReviews.length === 0 ? (
+                          <div className="bg-slate-50/50 border border-slate-200/60 rounded-2xl p-6 text-center space-y-1">
+                            <Star className="w-8 h-8 text-slate-300 mx-auto animate-pulse" />
+                            <h4 className="text-xs font-bold text-slate-700 font-sans">Aucun avis pour l'instant</h4>
+                            <p className="text-[11px] text-slate-400 font-sans max-w-xs mx-auto">Surnommé « Nouveau Concierge », soyez le premier à partager votre expérience après votre séjour !</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-4 max-h-[450px] overflow-y-auto pr-2 scrollbar-thin">
+                            {conciergeReviews.map((rev) => (
+                              <div key={rev.id} className="bg-slate-50 border border-slate-200/50 rounded-2xl p-4.5 space-y-2.5 shadow-2xs hover:bg-slate-50 transition-colors">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-7 h-7 bg-slate-200 text-slate-600 rounded-full font-bold text-xxs flex items-center justify-center uppercase shrink-0 select-none">
+                                      {rev.guestName.substring(0, 2).toUpperCase()}
+                                    </div>
+                                    <div>
+                                      <div className="text-xs font-extrabold text-slate-800 font-sans flex items-center gap-1.5">
+                                        <span>{rev.guestName}</span>
+                                        {rev.isAnonymous && (
+                                          <span className="text-[9px] font-bold uppercase tracking-wider bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-sm">Anonyme</span>
+                                        )}
+                                      </div>
+                                      <div className="text-[9px] text-slate-400 font-mono font-medium">{formatDateToFR(rev.createdAt.substring(0, 10))}</div>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-0.5">
+                                    {Array.from({ length: 5 }, (_, idx) => (
+                                      <Star
+                                        key={idx}
+                                        className={`w-3.5 h-3.5 ${
+                                          idx < rev.rating
+                                            ? "text-amber-500 fill-amber-500"
+                                            : "text-slate-200"
+                                        }`}
+                                      />
+                                    ))}
+                                  </div>
+                                </div>
+
+                                <p className="text-xs text-slate-600 font-sans leading-relaxed break-words bg-white/50 border border-white p-3 rounded-lg">
+                                  {rev.content}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Right Side: Left/Add Review Form (5 cols) */}
+                      <div className="md:col-span-5 border-t md:border-t-0 md:border-l border-slate-200/80 pt-8 md:pt-0 md:pl-8 space-y-4">
+                        <div className="space-y-1">
+                          <h4 className="text-sm font-extrabold text-slate-855 font-sans tracking-tight">
+                            Notez ce Concierge
+                          </h4>
+                          <p className="text-[11px] text-slate-400 font-sans leading-relaxed">
+                            Votre retour est précieux pour maintenir l'expérience d'excellence de l'écosystème.
+                          </p>
+                        </div>
+
+                        {reviewSuccess ? (
+                          <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl p-4 text-xs font-sans space-y-2 animate-fadeIn">
+                            <span className="font-extrabold block text-emerald-900 flex items-center gap-1">⭐ Avis enregistré !</span>
+                            <p className="text-emerald-700">Merci chaleureusement d'avoir partagé votre avis. La note moyenne a été mise à jour en temps réel.</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                            {reviewError && (
+                              <div className="p-3 bg-red-50 border border-red-200 text-red-650 rounded-xl text-[10.5px] font-sans font-semibold">
+                                {reviewError}
+                              </div>
+                            )}
+
+                            {/* Ratings selectors star system */}
+                            <div className="space-y-1.5 text-left">
+                              <label className="text-[9px] font-black text-slate-450 uppercase tracking-widest font-sans block">
+                                Attribution d'étoiles *
+                              </label>
+                              <div className="flex items-center gap-1.5">
+                                {Array.from({ length: 5 }, (_, idx) => {
+                                  const starVal = idx + 1;
+                                  return (
+                                    <button
+                                      key={idx}
+                                      type="button"
+                                      onClick={() => setReviewRating(starVal)}
+                                      className="p-1 hover:scale-110 active:scale-95 transition-all text-slate-250 hover:text-amber-400 cursor-pointer"
+                                    >
+                                      <Star
+                                        className={`w-6.5 h-6.5 transition-colors ${
+                                          starVal <= reviewRating
+                                            ? "text-amber-500 fill-amber-500"
+                                            : "text-slate-250"
+                                        }`}
+                                      />
+                                    </button>
+                                  );
+                                })}
+                                <span className="text-[10px] font-bold text-slate-500 font-sans ml-2">
+                                  {reviewRating === 5 ? "Excellent (5)" :
+                                   reviewRating === 4 ? "Très bon (4)" :
+                                   reviewRating === 3 ? "Moyen (3)" :
+                                   reviewRating === 2 ? "Passable (2)" : "Insuffisant (1)"}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Review Content */}
+                            <div className="space-y-1">
+                              <label className="text-[9px] font-black text-slate-450 uppercase tracking-widest font-sans block">
+                                Votre Commentaire *
+                              </label>
+                              <textarea
+                                value={reviewContent}
+                                onChange={(e) => setReviewContent(e.target.value)}
+                                placeholder="Donnez votre avis sur le service de conciergerie..."
+                                rows={3}
+                                className="w-full bg-slate-50/50 border border-slate-205 focus:border-slate-400 rounded-xl py-2 px-3 text-xs font-sans text-slate-800 outline-none resize-none"
+                              />
+                            </div>
+
+                            {/* Anonymous Option */}
+                            <div className="flex items-center gap-2.5 pt-1 pl-0.5">
+                              <input
+                                type="checkbox"
+                                id="review-anonymous"
+                                checked={reviewIsAnonymous}
+                                onChange={(e) => setReviewIsAnonymous(e.target.checked)}
+                                className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 cursor-pointer"
+                              />
+                              <label
+                                htmlFor="review-anonymous"
+                                className="text-[10.5px] font-bold text-slate-500 hover:text-slate-700 cursor-pointer select-none flex flex-col"
+                              >
+                                <span>Laisser mon avis de manière anonyme</span>
+                                <span className="text-[8.5px] font-normal text-slate-400 font-sans">
+                                  Votre nom sera remplacé par « Voyageur Anonyme »
+                                </span>
+                              </label>
+                            </div>
+
+                            {/* Submit button */}
+                            <div className="pt-2">
+                              <button
+                                type="button"
+                                disabled={reviewSubmitting}
+                                onClick={() => handleReviewSubmit(currentAptOwner.id)}
+                                className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-black text-[10px] uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-xs inline-flex items-center justify-center gap-1.5"
+                              >
+                                {reviewSubmitting ? (
+                                  <>
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                    <span>Enregistrement en cours...</span>
+                                  </>
+                                ) : (
+                                  <span>Soumettre mon Avis</span>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
             </div>
           )}

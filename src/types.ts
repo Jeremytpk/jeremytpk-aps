@@ -78,3 +78,16 @@ export interface HomeOwner {
   phone?: string;
   loginCode?: string;
 }
+
+export interface Review {
+  id: string;
+  conciergeId: string; // The ownerId of role 'espace' being reviewed
+  apartmentId?: string; // Optional: associated apartment
+  rating: number; // 1 to 5 stars
+  content: string; // The review text
+  guestName: string; // Creator's name
+  isAnonymous: boolean; // Truly anonymous
+  guestId?: string; // Creator's id or email
+  createdAt: string; // ISO date string
+}
+
